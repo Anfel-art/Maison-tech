@@ -1,0 +1,22 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install dependencies for better-sqlite3 (python, g++, make)
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+RUN npm install --omit=dev
+
+COPY . .
+
+# Ensure the uploads directory exists
+RUN mkdir -p server/uploads
+
+EXPOSE 3001
+
+CMD ["npm", "run", "server"]
