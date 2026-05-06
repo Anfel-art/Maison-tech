@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet-routing-machine';
-import { CheckCircle, XCircle, Play, Square, MapPin, GripVertical, Plus, Save, Wrench } from 'lucide-react';
+import { CheckCircle, XCircle, Play, Square, MapPin, GripVertical, Plus, Save, Wrench, QrCode, ScanLine } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { createRouteRun, updateRouteRun, updateStop } from './api';
 
 const DEFAULT_CENTER = [-0.225, -78.397]; // Tumbaco, Ecuador
@@ -105,6 +106,7 @@ export default function MapView({ machines, onBack, mobile = false, onRunStarted
         });
     });
     const [panelOpen, setPanelOpen] = useState(false);
+    const [qrModal, setQrModal] = useState(null); // { stopIdx, stopId, machineId, machineName }
     const [userLocation, setUserLocation] = useState(null);
     const userMarkerRef = useRef(null);
     const watchIdRef    = useRef(null);
@@ -471,22 +473,14 @@ export default function MapView({ machines, onBack, mobile = false, onRunStarted
                                 {isNext && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
                                         {onStopAction ? (
-                                            /* ── Modo mobile: Recaudación / Mantención / Saltar ── */
+                                            /* ── Modo mobile: Escanear QR / Saltar ── */
                                             <>
-                                                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                                    <button
-                                                        onClick={() => onStopAction(stopIds[i], m.id, 'record')}
-                                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.6rem 0.4rem', borderRadius: 'var(--radius-sm)', border: 'none', background: '#4f46e5', color: 'white', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(79,70,229,0.35)' }}
-                                                    >
-                                                        <Save size={14} /> Recaudación
-                                                    </button>
-                                                    <button
-                                                        onClick={() => onStopAction(stopIds[i], m.id, 'mantencion')}
-                                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.6rem 0.4rem', borderRadius: 'var(--radius-sm)', border: 'none', background: '#f59e0b', color: 'white', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(245,158,11,0.35)' }}
-                                                    >
-                                                        <Wrench size={14} /> Mantención
-                                                    </button>
-                                                </div>
+                                                <button
+                                                    onClick={() => setQrModal({ stopIdx: i, stopId: stopIds[i], machineId: m.id, machineName: m.location })}
+                                                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: 'none', background: '#4f46e5', color: 'white', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(79,70,229,0.35)' }}
+                                                >
+                                                    <QrCode size={16} /> Escanear QR
+                                                </button>
                                                 <button
                                                     onClick={() => handleStatus(i, 'failed')}
                                                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.45rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#b91c1c', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
@@ -698,6 +692,62 @@ export default function MapView({ machines, onBack, mobile = false, onRunStarted
                         </div>
                     )}
                 </div>
+
+                {/* ── Modal QR ── */}
+                {qrModal && (
+                    <div
+                        onClick={() => setQrModal(null)}
+                        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem' }}
+                    >
+                        <div
+                            onClick={e => e.stopPropagation()}
+                            style={{ background: 'var(--surface)', borderRadius: 20, padding: '1.5rem', width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', boxShadow: '0 8px 40px rgba(0,0,0,0.4)' }}
+                        >
+                            {/* Header */}
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.2rem' }}>Máquina</div>
+                                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-main)' }}>{qrModal.machineName}</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.1rem', letterSpacing: '0.5px' }}>{qrModal.machineId}</div>
+                            </div>
+
+                            {/* QR Code */}
+                            <div style={{ background: 'white', borderRadius: 12, padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.12)' }}>
+                                <QRCodeSVG value={qrModal.machineId} size={200} level="H" />
+                            </div>
+
+                            {/* Hint */}
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>
+                                Escaneá el QR y elegí la acción a realizar
+                            </div>
+
+                            {/* Action buttons */}
+                            <div style={{ display: 'flex', gap: '0.6rem', width: '100%' }}>
+                                <button
+                                    onClick={() => { onStopAction(qrModal.stopId, qrModal.machineId, 'record'); setQrModal(null); }}
+                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', padding: '0.85rem 0.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: '#4f46e5', color: 'white', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 3px 10px rgba(79,70,229,0.4)' }}
+                                >
+                                    <Save size={20} />
+                                    Recaudación
+                                </button>
+                                <button
+                                    onClick={() => { onStopAction(qrModal.stopId, qrModal.machineId, 'mantencion'); setQrModal(null); }}
+                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', padding: '0.85rem 0.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: '#f59e0b', color: 'white', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 3px 10px rgba(245,158,11,0.4)' }}
+                                >
+                                    <Wrench size={20} />
+                                    Mantención
+                                </button>
+                            </div>
+
+                            {/* Cerrar */}
+                            <button
+                                onClick={() => setQrModal(null)}
+                                style={{ width: '100%', padding: '0.55rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-color)', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <style>{`
                     .leaflet-routing-container { display: none !important; }

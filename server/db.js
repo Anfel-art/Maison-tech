@@ -432,4 +432,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS cliente_producto (
   }
 })();
 
+// ─── Migración: email en usuario ─────────────────────────────────────────────
+(() => {
+  const cols = db.prepare("PRAGMA table_info(usuario)").all().map(c => c.name);
+  if (!cols.includes('usu_email')) db.exec("ALTER TABLE usuario ADD COLUMN usu_email TEXT");
+})();
+
+// ─── Tabla: tokens de recuperación de contraseña ─────────────────────────────
+db.exec(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  usu_id     INTEGER NOT NULL REFERENCES usuario(usu_id),
+  token      TEXT    NOT NULL UNIQUE,
+  expires_at TEXT    NOT NULL,
+  used       INTEGER NOT NULL DEFAULT 0
+)`);
+
+// ─── Migración: vehículo del recaudador (color + chapa) ──────────────────────
+(() => {
+  const cols = db.prepare("PRAGMA table_info(vehiculo)").all().map(c => c.name);
+  if (!cols.includes('vei_color'))   db.exec("ALTER TABLE vehiculo ADD COLUMN vei_color TEXT");
+  if (!cols.includes('vei_chapa'))   db.exec("ALTER TABLE vehiculo ADD COLUMN vei_chapa TEXT");
+  if (!cols.includes('vei_marca'))   db.exec("ALTER TABLE vehiculo ADD COLUMN vei_marca TEXT");
+})();
+
 export default db;

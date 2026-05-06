@@ -26,6 +26,23 @@ async function request(path, options = {}) {
     return res.json();
 }
 
+// Auth — recuperación de contraseña (sin token)
+export const forgotPassword = (email) =>
+  fetch(`${BASE}/auth/forgot-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  }).then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Error'); return d; });
+
+export const resetPassword = (token, newPassword) =>
+  fetch(`${BASE}/auth/reset-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, newPassword }),
+  }).then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Error'); return d; });
+
+export const verifyResetToken = (token) =>
+  fetch(`${BASE}/auth/verify-reset-token/${token}`)
+    .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Token inválido'); return d; });
+
 // Auth
 export const login = async (user, pass) => {
     const res = await fetch(`${BASE}/auth/login`, {
@@ -169,6 +186,11 @@ export const getUsuariosActividad = () => request('/usuarios/actividad');
 export const createUsuario = (data) => request('/usuarios', { method: 'POST', body: JSON.stringify(data) });
 export const updateUsuario = (id, data) => request(`/usuarios/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 export const deleteUsuario = (id) => request(`/usuarios/${id}`, { method: 'DELETE' });
+
+// Vehículo del recaudador
+export const getVehiculo = (usuId) => request(`/usuarios/${usuId}/vehiculo`);
+export const saveVehiculo = (usuId, data) => request(`/usuarios/${usuId}/vehiculo`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteVehiculo = (usuId) => request(`/usuarios/${usuId}/vehiculo`, { method: 'DELETE' });
 
 // Config
 export const getConfig = () => request('/config');

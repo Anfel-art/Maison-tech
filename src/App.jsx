@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import * as LucideIcons from 'lucide-react';
 import MobileApp from './MobileApp';
-import { getMachines, getRecords, createRecord, updateMachine, getRouteRuns, updateStop, deleteStop, updateRouteRun, createRouteRun, createMachine, getTipos, getLugares, createLugar, updateLugar, getConfig, updateConfig, createTipo, updateTipo, deleteTipo, createCampo, updateCampo, deleteCampo, reorderCampos, login, getToken, clearToken, getReportePorEvento, getReporteMensual, getReporteAcumulado, getReporteDescuadres, getReporteExportUrl, getCajaMovimientos, getCajaBalance, createCajaMovimiento, deleteCajaMovimiento, reembolsarMovimiento, getCatalogo, createCatalogoItem, updateCatalogoItem, deleteCatalogoItem, uploadCatalogoImagen, getItemTiposCat, createItemTipoCat, updateItemTipoCat, deleteItemTipoCat, getTipomaquinas, getClientes, getClienteFicha, createCliente, updateCliente, deleteCliente, getCajaCierre, createCajaCierre, deleteCajaCierre, getUsuarios, createUsuario, updateUsuario, deleteUsuario, getUsuariosActividad, asignarProductoCliente, updateProductoCliente, removeProductoCliente } from './api';
+import { getMachines, getRecords, createRecord, updateMachine, getRouteRuns, updateStop, deleteStop, updateRouteRun, createRouteRun, createMachine, getTipos, getLugares, createLugar, updateLugar, getConfig, updateConfig, createTipo, updateTipo, deleteTipo, createCampo, updateCampo, deleteCampo, reorderCampos, login, getToken, clearToken, getReportePorEvento, getReporteMensual, getReporteAcumulado, getReporteDescuadres, getReporteExportUrl, getCajaMovimientos, getCajaBalance, createCajaMovimiento, deleteCajaMovimiento, reembolsarMovimiento, getCatalogo, createCatalogoItem, updateCatalogoItem, deleteCatalogoItem, uploadCatalogoImagen, getItemTiposCat, createItemTipoCat, updateItemTipoCat, deleteItemTipoCat, getTipomaquinas, getClientes, getClienteFicha, createCliente, updateCliente, deleteCliente, getCajaCierre, createCajaCierre, deleteCajaCierre, getUsuarios, createUsuario, updateUsuario, deleteUsuario, getUsuariosActividad, getVehiculo, saveVehiculo, deleteVehiculo, asignarProductoCliente, updateProductoCliente, removeProductoCliente, forgotPassword, resetPassword, verifyResetToken } from './api';
 import './index.css';
 
 const Icon = ({ name, size = 24, className = "" }) => {
@@ -526,7 +526,7 @@ const AsignacionRecorridoPage = () => {
                 </div>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 300px', gap:'1.25rem', alignItems:'start' }}>
+            <div className="asignacion-grid">
 
                 {/* ── Panel izquierdo: filtros + máquinas ── */}
                 <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
@@ -756,7 +756,7 @@ const RoutesPage = () => {
             <>
                     {/* Aggregate stats for completed runs */}
                     {completed.length > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                        <div className="routes-stats-grid">
                             {[
                                 ['Rutas completadas', completed.length, null],
                                 ['Total recaudado', fmtGs(statsRecaudado), '#10b981'],
@@ -919,7 +919,9 @@ const MachinesPage = ({ machines, onMachineCreated, onBack }) => {
         proId: '',
         status: 'ok',
         fechaCreacion: new Date().toISOString().slice(0, 10),
+        customId: '',       // vacío = usar el generado automáticamente
     });
+    const [idManuallyEdited, setIdManuallyEdited] = useState(false);
     // New lugar inline form
     const [lugarForm, setLugarForm] = useState({ nombre: '', direccion: '', lat: '', lng: '' });
     // Map picker: null | 'new' | lugarId (editing existing)
@@ -935,7 +937,9 @@ const MachinesPage = ({ machines, onMachineCreated, onBack }) => {
 
     useEffect(() => { loadMeta(); }, [loadMeta]);
 
-    const generatedId = form.tmqId ? generateMachineId(parseInt(form.tmqId), machines) : '—';
+    const generatedId = form.tmqId ? generateMachineId(parseInt(form.tmqId), machines) : '';
+    // Cuando cambia el tipo y el usuario NO editó manualmente el ID, sincronizar
+    const effectiveId = (idManuallyEdited && form.customId.trim()) ? form.customId.trim() : generatedId;
 
     async function handleAddLugar() {
         if (!lugarForm.nombre.trim()) return;
@@ -953,11 +957,11 @@ const MachinesPage = ({ machines, onMachineCreated, onBack }) => {
 
     async function handleSubmit(e) {
         e.preventDefault();
-        if (!form.tmqId || !form.lgrId) return;
+        if (!form.tmqId || !form.lgrId || !effectiveId) return;
         setSaving(true);
         try {
             await createMachine({
-                id: generatedId,
+                id: effectiveId,
                 tmqId: parseInt(form.tmqId),
                 lgrId: parseInt(form.lgrId),
                 proId: form.proId ? parseInt(form.proId) : undefined,
@@ -1028,10 +1032,35 @@ const MachinesPage = ({ machines, onMachineCreated, onBack }) => {
                     </div>
 
                     <form onSubmit={handleSubmit}>
-                        {/* Generated ID preview */}
+                        {/* ID de máquina — editable */}
                         <div className="card mb-6 p-4" style={{ background: 'var(--bg-color)', border: '1px dashed var(--border)' }}>
-                            <div className="text-xs text-muted mb-1">ID generado automáticamente</div>
-                            <div className="text-2xl font-bold text-primary">{generatedId}</div>
+                            <label className="text-xs font-bold text-muted mb-2 block" style={{ letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                ID de Máquina
+                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                <input
+                                    className="input"
+                                    style={{ fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.5px', flex: 1 }}
+                                    value={idManuallyEdited ? form.customId : generatedId}
+                                    placeholder={generatedId || 'Selecciona un tipo primero…'}
+                                    onChange={e => {
+                                        setIdManuallyEdited(true);
+                                        setForm(f => ({ ...f, customId: e.target.value }));
+                                    }}
+                                />
+                                {idManuallyEdited && (
+                                    <button type="button" className="btn btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}
+                                        onClick={() => { setIdManuallyEdited(false); setForm(f => ({ ...f, customId: '' })); }}
+                                        title="Restaurar ID automático">
+                                        <Icon name="refresh-cw" size={13} /> Auto
+                                    </button>
+                                )}
+                            </div>
+                            {!idManuallyEdited && generatedId && (
+                                <div className="text-xs text-muted mt-1">
+                                    Generado automáticamente según el tipo · edita el campo para personalizar
+                                </div>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1039,7 +1068,10 @@ const MachinesPage = ({ machines, onMachineCreated, onBack }) => {
                             <div className="input-group">
                                 <label className="label">Tipo de Máquina <span style={{ color: 'var(--danger)' }}>*</span></label>
                                 <select className="input" required value={form.tmqId}
-                                    onChange={e => setForm(f => ({ ...f, tmqId: e.target.value }))}>
+                                    onChange={e => {
+                                        setForm(f => ({ ...f, tmqId: e.target.value }));
+                                        if (!idManuallyEdited) {} // noop — auto-ID recalculates from generatedId
+                                    }}>
                                     <option value="">Seleccionar tipo...</option>
                                     {tipos.map(t => <option key={t.id} value={t.id}>{t.desc}</option>)}
                                 </select>
@@ -1583,7 +1615,7 @@ const ConfigPanel = ({ onMachineTypesChanged }) => {
 const TIPO_ICONOS = { Maquina:'🎰', Electronico:'⚡', Otro:'📦' };
 const tipoIcon = (nombre) => TIPO_ICONOS[nombre] || '📦';
 
-const ProductosPage = () => {
+const ProductosPage = ({ readOnly = false }) => {
     const [items, setItems]           = useState([]);
     const [tiposCat, setTiposCat]     = useState([]);
     const [tipomaquinas, setTipomaquinas] = useState([]);
@@ -1772,8 +1804,11 @@ const ProductosPage = () => {
 
             {/* ── Modal crear / editar ítem ── */}
             {editing !== null && createPortal(
-                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
-                    <div style={{ background:'white', borderRadius:16, padding:'2rem', width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
+                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9000, display:'flex', alignItems:'flex-end', justifyContent:'center', padding:'0' }}
+                    className="modal-productos-overlay">
+                    <div style={{ background:'white', borderRadius:'16px 16px 0 0', padding:'1.5rem 1.5rem 2rem', width:'100%', maxWidth:480, maxHeight:'92dvh', overflowY:'auto', boxShadow:'0 -4px 40px rgba(0,0,0,0.2)' }}
+                        onClick={e => e.stopPropagation()}>
+                    <style>{`@media (min-width: 769px) { .modal-productos-overlay { align-items: center !important; padding: 1rem !important; } .modal-productos-overlay > div { border-radius: 16px !important; max-height: 90vh; } }`}</style>
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.5rem' }}>
                             <h3 style={{ fontWeight:700, fontSize:'1.1rem' }}>{editing === 'new' ? 'Nuevo ítem' : 'Editar ítem'}</h3>
                             <button onClick={() => setEditing(null)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'1.2rem', color:'#555' }}>✕</button>
@@ -1905,9 +1940,11 @@ const ProductosPage = () => {
                             <Icon name="x" size={14} /> Limpiar filtros
                         </button>
                     )}
-                    <button className="btn btn-primary" onClick={openNew} style={{ flexShrink:0 }}>
-                        <Icon name="plus" size={16} /> Nuevo ítem
-                    </button>
+                    {!readOnly && (
+                        <button className="btn btn-primary" onClick={openNew} style={{ flexShrink:0 }}>
+                            <Icon name="plus" size={16} /> Nuevo ítem
+                        </button>
+                    )}
                 </div>
 
                 <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', alignItems:'center' }}>
@@ -1931,10 +1968,12 @@ const ProductosPage = () => {
                                 </button>
                             );
                         })}
-                        <button onClick={() => setGestionTipos(true)} title="Gestionar tipos"
-                            style={{ padding:'0.35rem 0.5rem', borderRadius:7, border:'1px dashed var(--border)', background:'transparent', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontSize:'0.75rem' }}>
-                            <Icon name="settings" size={13} /> Gestionar
-                        </button>
+                        {!readOnly && (
+                            <button onClick={() => setGestionTipos(true)} title="Gestionar tipos"
+                                style={{ padding:'0.35rem 0.5rem', borderRadius:7, border:'1px dashed var(--border)', background:'transparent', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontSize:'0.75rem' }}>
+                                <Icon name="settings" size={13} /> Gestionar
+                            </button>
+                        )}
                     </div>
 
                     <div style={{ width:1, height:24, background:'var(--border)' }} />
@@ -1994,94 +2033,61 @@ const ProductosPage = () => {
                         <div>{q ? `Sin resultados para "${buscar}"` : 'Sin ítems registrados'}</div>
                         {q ? (
                             <button className="btn btn-secondary mt-3" onClick={() => setBuscar('')}><Icon name="x" size={14} /> Limpiar búsqueda</button>
-                        ) : (
+                        ) : !readOnly ? (
                             <button className="btn btn-primary mt-4" onClick={openNew}><Icon name="plus" size={16} /> Agregar primero</button>
-                        )}
+                        ) : null}
                     </div>
                 ) : (
-                    <div className="table-wrapper">
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Nombre</th>
-                                    <th>Tipo</th>
-                                    <th>Precio Unitario</th>
-                                    <th>Existencias</th>
-                                    <th>Descripción</th>
-                                    <th>Estado</th>
-                                    <th>Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.map(item => (
-                                    <tr key={item.item_id} style={{ opacity: item.item_vigente ? 1 : 0.5 }}>
-                                        <td className="font-medium">
-                                            <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
-                                                {item.item_imagen ? (
-                                                    <img src={item.item_imagen} alt={item.item_nombre} style={{ width:36, height:36, objectFit:'cover', borderRadius:7, border:'1px solid var(--border)', flexShrink:0 }} />
-                                                ) : (
-                                                    <div style={{ width:36, height:36, borderRadius:7, border:'1px dashed var(--border)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0, fontSize:18 }}>
-                                                        {item.tipo_cat_nombre ? tipoIcon(item.tipo_cat_nombre) : '📦'}
-                                                    </div>
-                                                )}
-                                                {highlight(item.item_nombre)}
-                                            </div>
-                                        </td>
-                                        <td>
-                                            {item.tipo_cat_nombre ? (
-                                                <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-                                                    <span style={{ background:'var(--primary-light)', color:'var(--primary)', borderRadius:6, padding:'2px 8px', fontSize:'0.76rem', fontWeight:700, display:'inline-flex', alignItems:'center', gap:4 }}>
-                                                        {tipoIcon(item.tipo_cat_nombre)} {item.tipo_cat_nombre}
-                                                    </span>
-                                                    {item.tipo_maq_nombre && (
-                                                        <span style={{ background:'#eff6ff', color:'#2563eb', borderRadius:6, padding:'2px 8px', fontSize:'0.72rem', fontWeight:600 }}>
-                                                            🎮 {item.tipo_maq_nombre}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <span style={{ color:'var(--text-muted)', fontSize:'0.8rem' }}>—</span>
-                                            )}
-                                        </td>
-                                        <td className="font-bold">${Number(item.item_precio).toLocaleString('es-CL')}</td>
-                                        <td>
-                                            {(() => {
-                                                const s = item.item_stock ?? 0;
-                                                const color = s === 0 ? '#ef4444' : s <= 5 ? '#f59e0b' : 'var(--success)';
-                                                const bg    = s === 0 ? '#fef2f2' : s <= 5 ? '#fffbeb' : '#f0fdf4';
-                                                return (
-                                                    <span style={{ background:bg, color, borderRadius:999, fontSize:'0.78rem', fontWeight:700, padding:'2px 10px', display:'inline-flex', alignItems:'center', gap:4 }}>
-                                                        {s === 0 && <Icon name="alert-circle" size={12} />}
-                                                        {s} {item.item_tipo === 'servicio' ? 'usos' : 'u.'}
-                                                    </span>
-                                                );
-                                            })()}
-                                        </td>
-                                        <td className="text-sm text-muted">{highlight(item.item_descrip || '—')}</td>
-                                        <td>
-                                            <button
-                                                className="btn btn-secondary btn-icon"
-                                                title={item.item_vigente ? 'Desactivar' : 'Activar'}
-                                                onClick={() => handleToggle(item)}
-                                                style={{ color: item.item_vigente ? 'var(--success)' : 'var(--text-muted)' }}
-                                            >
-                                                <Icon name={item.item_vigente ? 'toggle-right' : 'toggle-left'} size={22} />
+                    <div className="productos-card-grid" style={{ padding:'1rem' }}>
+                        {filtered.map(item => {
+                            const s = item.item_stock ?? 0;
+                            const stockColor = s === 0 ? '#ef4444' : s <= 5 ? '#f59e0b' : '#16a34a';
+                            const stockBg    = s === 0 ? '#fef2f2' : s <= 5 ? '#fffbeb' : '#f0fdf4';
+                            const descripcion = item.item_descrip || item.tipo_cat_nombre || '';
+                            return (
+                                <div key={item.item_id} className="producto-card" style={{ opacity: item.item_vigente ? 1 : 0.5 }}>
+                                    {/* Imagen */}
+                                    <div className="producto-card-img">
+                                        {item.item_imagen
+                                            ? <img src={item.item_imagen} alt={item.item_nombre} />
+                                            : <span>{item.tipo_cat_nombre ? tipoIcon(item.tipo_cat_nombre) : '📦'}</span>
+                                        }
+                                    </div>
+                                    {/* Info */}
+                                    <div className="producto-card-body">
+                                        <div className="producto-card-nombre">{item.item_nombre}</div>
+                                        <div className="producto-card-precio-row">
+                                            <span className="producto-card-precio">
+                                                ${Number(item.item_precio).toLocaleString('es-CL')}
+                                            </span>
+                                            <span className="producto-card-stock" style={{ background:stockBg, color:stockColor }}>
+                                                {s === 0 && <Icon name="alert-circle" size={9} />}
+                                                {s}{item.item_tipo === 'servicio' ? 'u.' : 'u.'}
+                                            </span>
+                                        </div>
+                                        {descripcion && (
+                                            <div className="producto-card-desc">{descripcion}</div>
+                                        )}
+                                    </div>
+                                    {/* Acciones (solo admin/superadmin) */}
+                                    {!readOnly && (
+                                        <div className="producto-card-actions">
+                                            <button className="btn btn-secondary btn-icon" onClick={() => openEdit(item)} title="Editar">
+                                                <Icon name="edit-2" size={13} />
                                             </button>
-                                        </td>
-                                        <td>
-                                            <div className="flex gap-1">
-                                                <button className="btn btn-secondary btn-icon" title="Editar" onClick={() => openEdit(item)}>
-                                                    <Icon name="edit" size={15} />
-                                                </button>
-                                                <button className="btn btn-secondary btn-icon" title="Eliminar" onClick={() => handleDelete(item)} style={{ color:'var(--danger)' }}>
-                                                    <Icon name="trash-2" size={15} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                            <button className="btn btn-secondary btn-icon" onClick={() => handleToggle(item)} title={item.item_vigente ? 'Desactivar' : 'Activar'}
+                                                style={{ color: item.item_vigente ? 'var(--success)' : 'var(--text-muted)' }}>
+                                                <Icon name="refresh-cw" size={13} />
+                                            </button>
+                                            <button className="btn btn-secondary btn-icon" onClick={() => handleDelete(item)} title="Eliminar"
+                                                style={{ color:'var(--danger)' }}>
+                                                <Icon name="trash-2" size={13} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -2785,7 +2791,7 @@ const CajaPage = ({ userRol }) => {
             )}
 
             {/* Balance Cards */}
-            <div className="stats-grid" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="stats-grid routes-stats-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="card stat-card">
                     <div className="stat-icon bg-success-light">
                         <Icon name="arrow-down-circle" size={24} className="text-success" />
@@ -2832,7 +2838,7 @@ const CajaPage = ({ userRol }) => {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
+            <div className="caja-main-grid">
                 {/* LEFT: Tipo + Catálogo */}
                 <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
                     <div className="card p-5">
@@ -3744,7 +3750,7 @@ const ClienteFichaPage = ({ cliId, onBack }) => {
         // Pre-seleccionar si hay una sola
         const primera = candidatas[0] || null;
         setMaqSelec(primera);
-        if (primera) setMaqForm({ tmqId: primera.tmq_id ?? '', lgrId: primera.lgr_id ?? '', status: primera.maq_status ?? 'ok' });
+        if (primera) setMaqForm({ maqId: primera.maq_id ?? '', tmqId: primera.tmq_id ?? '', lgrId: primera.lgr_id ?? '', status: primera.maq_status ?? 'ok' });
         // Cargar tipos y lugares si aún no están cargados
         if (!maqMeta) {
             const [tipos, lugares] = await Promise.all([getTipos(), getLugares()]);
@@ -3754,9 +3760,16 @@ const ClienteFichaPage = ({ cliId, onBack }) => {
 
     const handleSaveMaquina = async () => {
         if (!maqSelec) return;
+        const nuevoId = (maqForm.maqId || '').trim();
+        if (!nuevoId) { alert('El ID de la máquina no puede estar vacío.'); return; }
         setSavingMaq(true);
         try {
-            await updateMachine(maqSelec.maq_id, { tmqId: maqForm.tmqId || undefined, lgrId: maqForm.lgrId || undefined, status: maqForm.status });
+            await updateMachine(maqSelec.maq_id, {
+                newId: nuevoId !== maqSelec.maq_id ? nuevoId : undefined,
+                tmqId: maqForm.tmqId || undefined,
+                lgrId: maqForm.lgrId || undefined,
+                status: maqForm.status,
+            });
             await cargar();
             setMaqModal(null); setMaqSelec(null); setMaqForm({});
         } catch (e) { alert(e.message || 'Error al guardar la máquina'); }
@@ -3820,7 +3833,7 @@ const ClienteFichaPage = ({ cliId, onBack }) => {
                                         <div style={{ fontSize:'0.68rem', fontWeight:700, color:'var(--text-muted)', letterSpacing:'1.2px', textTransform:'uppercase', marginBottom:'0.5rem' }}>Seleccionar máquina</div>
                                         <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
                                             {maqModal.maquinas.map(m => (
-                                                <button key={m.maq_id} onClick={() => { setMaqSelec(m); setMaqForm({ tmqId: m.tmq_id ?? '', lgrId: m.lgr_id ?? '', status: m.maq_status ?? 'ok' }); }}
+                                                <button key={m.maq_id} onClick={() => { setMaqSelec(m); setMaqForm({ maqId: m.maq_id ?? '', tmqId: m.tmq_id ?? '', lgrId: m.lgr_id ?? '', status: m.maq_status ?? 'ok' }); }}
                                                     style={{ display:'flex', alignItems:'center', gap:10, padding:'0.6rem 0.9rem', borderRadius:8, border:`1.5px solid ${maqSelec?.maq_id === m.maq_id ? '#7c3aed' : 'var(--border)'}`, background: maqSelec?.maq_id === m.maq_id ? '#f5f3ff' : 'white', cursor:'pointer', textAlign:'left' }}>
                                                     <div style={{ width:34, height:34, borderRadius:8, background:'#ede9fe', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                                                         <Icon name="cpu" size={16} style={{ color:'#6d28d9' }} />
@@ -3851,6 +3864,21 @@ const ClienteFichaPage = ({ cliId, onBack }) => {
                                     )}
 
                                     <div style={{ borderTop:'1px dashed var(--border)', paddingTop:'0.85rem', display:'flex', flexDirection:'column', gap:'0.7rem' }}>
+                                        {/* ID de máquina */}
+                                        <div>
+                                            <label style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-muted)', letterSpacing:'1.2px', textTransform:'uppercase', display:'block', marginBottom:4 }}>ID de Máquina</label>
+                                            <input
+                                                value={maqForm.maqId ?? ''}
+                                                onChange={e => setMaqForm(f => ({ ...f, maqId: e.target.value }))}
+                                                style={{ width:'100%', padding:'0.45rem 0.65rem', borderRadius:7, border: (maqForm.maqId && maqForm.maqId !== maqSelec?.maq_id) ? '1.5px solid #7c3aed' : '1px solid var(--border)', fontSize:'0.9rem', fontWeight:700, background:'white', letterSpacing:'0.5px', boxSizing:'border-box' }}
+                                                placeholder="Ej: MQR-004"
+                                            />
+                                            {maqForm.maqId && maqForm.maqId !== maqSelec?.maq_id && (
+                                                <div style={{ fontSize:'0.68rem', color:'#7c3aed', marginTop:3, fontWeight:600 }}>
+                                                    ⚠️ El ID cambiará de <strong>{maqSelec?.maq_id}</strong> a <strong>{maqForm.maqId}</strong>
+                                                </div>
+                                            )}
+                                        </div>
                                         {/* Tipo de máquina */}
                                         <div>
                                             <label style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--text-muted)', letterSpacing:'1.2px', textTransform:'uppercase', display:'block', marginBottom:4 }}>Tipo de Máquina</label>
@@ -4866,7 +4894,8 @@ function UsuariosPage({ userRol }) {
     const [modal, setModal] = useState(null); // null | { mode:'new'|'edit', data? }
     const [delTarget, setDelTarget] = useState(null);
     const [saving, setSaving] = useState(false);
-    const [form, setForm] = useState({ nombre:'', user:'', pass:'', rol:'terreno' });
+    const [form, setForm] = useState({ nombre:'', user:'', pass:'', rol:'terreno', email:'' });
+    const [vehiculoForm, setVehiculoForm] = useState({ modelo:'', marca:'', color:'', chapa:'' });
     const [formErr, setFormErr] = useState('');
     const [passVisible, setPassVisible] = useState(new Set()); // ids con password visible
     const [perfilUsu, setPerfilUsu] = useState(null);          // usuario abierto en panel de perfil
@@ -4879,6 +4908,7 @@ function UsuariosPage({ userRol }) {
     const [perfilBuscar, setPerfilBuscar] = useState('');
     const [perfilError, setPerfilError] = useState('');
     const [perfilRemoving, setPerfilRemoving] = useState(new Set()); // stopIds en proceso de eliminación
+    const [perfilVehiculo, setPerfilVehiculo] = useState(null); // vehículo del recaudador
 
     const rolesDisponibles = userRol === 'superadmin'
         ? ['superadmin', 'admin', 'caja', 'terreno']
@@ -4896,14 +4926,20 @@ function UsuariosPage({ userRol }) {
     const abrirPerfil = async (u) => {
         setPerfilUsu(u);
         setPerfilRuns([]);
+        setPerfilVehiculo(null);
         setPerfilLoading(true);
         setPerfilAsignando(false);
         setPerfilSelec(new Set());
         setPerfilBuscar('');
         setPerfilError('');
         try {
-            const runs = await getRouteRuns({ usuId: u.id });
+            const [runs] = await Promise.all([
+                getRouteRuns({ usuId: u.id }),
+            ]);
             setPerfilRuns(runs);
+            if (u.rol === 'terreno') {
+                try { setPerfilVehiculo(await getVehiculo(u.id)); } catch {}
+            }
         } catch { setPerfilRuns([]); }
         finally { setPerfilLoading(false); }
     };
@@ -4943,15 +4979,24 @@ function UsuariosPage({ userRol }) {
     };
 
     const openNew = () => {
-        setForm({ nombre:'', user:'', pass:'', rol:'terreno' });
+        setForm({ nombre:'', user:'', pass:'', rol:'terreno', email:'' });
+        setVehiculoForm({ modelo:'', marca:'', color:'', chapa:'' });
         setFormErr('');
         setModal({ mode:'new' });
     };
-    const openEdit = (u) => {
+    const openEdit = async (u) => {
         const rolInicial = rolesDisponibles.includes(u.rol) ? u.rol : rolesDisponibles[0];
-        setForm({ nombre: u.nombre, user: u.user, pass:'', rol: rolInicial });
+        setForm({ nombre: u.nombre, user: u.user, pass:'', rol: rolInicial, email: u.email || '' });
+        setVehiculoForm({ modelo:'', marca:'', color:'', chapa:'' });
         setFormErr('');
         setModal({ mode:'edit', data: u });
+        // Cargar vehículo si es recaudador
+        if (u.rol === 'terreno') {
+            try {
+                const v = await getVehiculo(u.id);
+                if (v) setVehiculoForm({ modelo: v.modelo || '', marca: v.marca || '', color: v.color || '', chapa: v.chapa || '' });
+            } catch {}
+        }
     };
 
     const handleSave = async () => {
@@ -4959,12 +5004,20 @@ function UsuariosPage({ userRol }) {
         if (modal.mode === 'new' && (!form.user.trim() || !form.pass.trim())) return setFormErr('Usuario y contraseña son requeridos para un usuario nuevo');
         setSaving(true); setFormErr('');
         try {
+            let usuId;
             if (modal.mode === 'new') {
-                await createUsuario(form);
+                const creado = await createUsuario(form);
+                usuId = creado.id;
             } else {
-                const payload = { nombre: form.nombre, rol: form.rol };
+                const payload = { nombre: form.nombre, rol: form.rol, email: form.email || '' };
                 if (form.pass.trim()) payload.pass = form.pass;
                 await updateUsuario(modal.data.id, payload);
+                usuId = modal.data.id;
+            }
+            // Guardar vehículo si el rol es terreno y hay modelo ingresado
+            const rolFinal = form.rol;
+            if (rolFinal === 'terreno' && vehiculoForm.modelo.trim()) {
+                await saveVehiculo(usuId, vehiculoForm);
             }
             setModal(null);
             await load();
@@ -4993,6 +5046,9 @@ function UsuariosPage({ userRol }) {
                     </button>
                 </div>
                 {error && <div className="alert alert-danger m-4">{error}</div>}
+
+                {/* ── DESKTOP: tabla ── */}
+                <div className="usuarios-table-wrapper">
                 <table className="table" style={{ width:'100%' }}>
                     <thead>
                         <tr>
@@ -5061,12 +5117,68 @@ function UsuariosPage({ userRol }) {
                         })}
                     </tbody>
                 </table>
+                </div>{/* fin .usuarios-table-wrapper */}
+
+                {/* ── MÓVIL: tarjetas ── */}
+                <div className="usuarios-mobile-list">
+                    {usuarios.map(u => {
+                        const visible = passVisible.has(u.id);
+                        const togglePass = () => setPassVisible(s => { const n = new Set(s); n.has(u.id) ? n.delete(u.id) : n.add(u.id); return n; });
+                        return (
+                            <div key={u.id} className="usuario-card">
+                                <div className="usuario-card-header">
+                                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                                        <div style={{ width:40, height:40, borderRadius:'50%', background: ROL_COLORS[u.rol] || '#64748b', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                                            <Icon name="user" size={18} style={{ color:'white' }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontWeight:700, fontSize:'0.9rem' }}>{u.nombre}</div>
+                                            <div style={{ fontFamily:'monospace', fontSize:'0.75rem', color:'var(--text-muted)' }}>@{u.user}</div>
+                                        </div>
+                                    </div>
+                                    <span style={{ background: ROL_COLORS[u.rol] || '#64748b', color:'white', borderRadius:999, fontSize:'0.7rem', fontWeight:700, padding:'3px 10px', flexShrink:0 }}>
+                                        {ROL_LABELS[u.rol] || u.rol}
+                                    </span>
+                                </div>
+                                {u.password !== null && (
+                                    <div className="usuario-card-pass">
+                                        <span style={{ fontSize:'0.68rem', color:'var(--text-muted)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', flexShrink:0 }}>Contraseña:</span>
+                                        <span style={{ fontFamily:'monospace', flex:1, letterSpacing: visible ? 'normal' : '0.1em', fontSize:'0.82rem' }}>
+                                            {visible ? u.password : '••••••••'}
+                                        </span>
+                                        <button onClick={togglePass} style={{ background:'none', border:'none', cursor:'pointer', padding:2, color:'var(--text-muted)', display:'flex', flexShrink:0 }}>
+                                            <Icon name={visible ? 'eye-off' : 'eye'} size={14} />
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="usuario-card-actions">
+                                    {u.rol === 'terreno' && (
+                                        <button className="btn btn-secondary btn-icon" title="Ver perfil" onClick={() => abrirPerfil(u)}>
+                                            <Icon name="layout-list" size={15} />
+                                        </button>
+                                    )}
+                                    {u.rol !== 'superadmin' && (u.rol !== 'admin' || userRol === 'superadmin') && (<>
+                                        <button className="btn btn-secondary btn-icon" title="Editar" onClick={() => openEdit(u)}>
+                                            <Icon name="pencil" size={15} />
+                                        </button>
+                                        <button className="btn btn-icon" title="Eliminar"
+                                            style={{ color:'var(--danger)', border:'1px solid var(--danger)', background:'transparent' }}
+                                            onClick={() => setDelTarget(u)}>
+                                            <Icon name="trash-2" size={15} />
+                                        </button>
+                                    </>)}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
             </div>
 
             {/* Modal crear/editar */}
             {modal && createPortal(
-                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }} onClick={() => setModal(null)}>
-                    <div style={{ background:'var(--surface,white)', borderRadius:12, boxShadow:'0 20px 60px rgba(0,0,0,0.25)', width:'100%', maxWidth:440, display:'flex', flexDirection:'column', maxHeight:'90vh', overflow:'hidden' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-overlay" onClick={() => setModal(null)}>
+                    <div className="modal-box" style={{ maxWidth:440, display:'flex', flexDirection:'column', maxHeight:'90vh' }} onClick={e => e.stopPropagation()}>
                         <div style={{ padding:'1.1rem 1.25rem', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                             <h3 style={{ fontWeight:700, fontSize:'1rem', margin:0 }}>{modal.mode === 'new' ? 'Nuevo Usuario' : 'Editar Usuario'}</h3>
                             <button className="btn btn-secondary btn-icon" onClick={() => setModal(null)}><Icon name="x" size={18} /></button>
@@ -5088,6 +5200,10 @@ function UsuariosPage({ userRol }) {
                                 <input className="input" type="password" value={form.pass} onChange={e => setForm(f=>({...f,pass:e.target.value}))} placeholder={modal.mode === 'new' ? 'Contraseña' : 'Sin cambios si se deja vacío'} autoComplete="new-password" />
                             </label>
                             <label className="form-group">
+                                <span className="form-label">Email <span style={{ color:'var(--text-muted)', fontWeight:400 }}>(para recuperar contraseña)</span></span>
+                                <input className="input" type="email" value={form.email} onChange={e => setForm(f=>({...f,email:e.target.value}))} placeholder="usuario@ejemplo.com" autoComplete="off" />
+                            </label>
+                            <label className="form-group">
                                 <span className="form-label">Rol</span>
                                 <select className="input" value={form.rol} onChange={e => setForm(f=>({...f,rol:e.target.value}))}>
                                     {rolesDisponibles.map(r => (
@@ -5101,6 +5217,39 @@ function UsuariosPage({ userRol }) {
                                 {form.rol === 'admin' && '🛡️ Acceso completo al sistema de administración.'}
                                 {form.rol === 'superadmin' && '👑 Acceso total al sistema, incluyendo configuración y gestión de administradores.'}
                             </div>
+
+                            {/* Vehículo — solo para recaudadores de terreno */}
+                            {form.rol === 'terreno' && (
+                                <div style={{ borderTop: '1px dashed var(--border)', paddingTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                                        <Icon name="car" size={14} /> Vehículo del Recaudador
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                                        <label className="form-group" style={{ margin: 0 }}>
+                                            <span className="form-label">Modelo <span style={{ color:'var(--danger)' }}>*</span></span>
+                                            <input className="input" value={vehiculoForm.modelo} onChange={e => setVehiculoForm(f=>({...f, modelo:e.target.value}))} placeholder="Ej: Hilux, Civic" />
+                                        </label>
+                                        <label className="form-group" style={{ margin: 0 }}>
+                                            <span className="form-label">Marca</span>
+                                            <input className="input" value={vehiculoForm.marca} onChange={e => setVehiculoForm(f=>({...f, marca:e.target.value}))} placeholder="Ej: Toyota, Honda" />
+                                        </label>
+                                        <label className="form-group" style={{ margin: 0 }}>
+                                            <span className="form-label">Color</span>
+                                            <input className="input" value={vehiculoForm.color} onChange={e => setVehiculoForm(f=>({...f, color:e.target.value}))} placeholder="Ej: Blanco, Negro" />
+                                        </label>
+                                        <label className="form-group" style={{ margin: 0 }}>
+                                            <span className="form-label">Chapa / Patente</span>
+                                            <input className="input" style={{ textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}
+                                                value={vehiculoForm.chapa}
+                                                onChange={e => setVehiculoForm(f=>({...f, chapa:e.target.value.toUpperCase()}))}
+                                                placeholder="Ej: ABC-1234" />
+                                        </label>
+                                    </div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                        El modelo es obligatorio para guardar el vehículo. Los demás campos son opcionales.
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div style={{ padding:'1rem 1.25rem', borderTop:'1px solid var(--border)', display:'flex', justifyContent:'flex-end', gap:'0.5rem' }}>
                             <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
@@ -5115,8 +5264,8 @@ function UsuariosPage({ userRol }) {
 
             {/* Confirmar eliminación */}
             {delTarget && createPortal(
-                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }} onClick={() => setDelTarget(null)}>
-                    <div style={{ background:'var(--surface,white)', borderRadius:12, boxShadow:'0 20px 60px rgba(0,0,0,0.25)', width:'100%', maxWidth:400, display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-overlay" onClick={() => setDelTarget(null)}>
+                    <div className="modal-box" style={{ maxWidth:400, display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
                         <div style={{ padding:'1.1rem 1.25rem', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                             <h3 style={{ fontWeight:700, fontSize:'1rem', margin:0 }}>Eliminar Usuario</h3>
                             <button className="btn btn-secondary btn-icon" onClick={() => setDelTarget(null)}><Icon name="x" size={18} /></button>
@@ -5136,8 +5285,8 @@ function UsuariosPage({ userRol }) {
 
             {/* ── Modal perfil recaudador ── */}
             {perfilUsu && createPortal(
-                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }} onClick={() => { setPerfilUsu(null); setPerfilAsignando(false); }}>
-                    <div style={{ background:'var(--surface,white)', borderRadius:14, boxShadow:'0 24px 64px rgba(0,0,0,0.28)', width:'100%', maxWidth:580, display:'flex', flexDirection:'column', maxHeight:'90vh', overflow:'hidden' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-overlay" onClick={() => { setPerfilUsu(null); setPerfilAsignando(false); }}>
+                    <div className="modal-box" style={{ maxWidth:580, display:'flex', flexDirection:'column', maxHeight:'90vh', overflow:'hidden' }} onClick={e => e.stopPropagation()}>
 
                         {/* Cabecera */}
                         <div style={{ padding:'1.1rem 1.25rem', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
@@ -5153,6 +5302,47 @@ function UsuariosPage({ userRol }) {
 
                         {/* Cuerpo scrollable */}
                         <div style={{ flex:1, overflowY:'auto', padding:'1.1rem 1.25rem', display:'flex', flexDirection:'column', gap:'1.1rem' }}>
+
+                            {/* Vehículo del recaudador */}
+                            {perfilUsu.rol === 'terreno' && (
+                                <div style={{ background: perfilVehiculo ? '#f0fdf4' : 'var(--bg-color)', border: `1px solid ${perfilVehiculo ? '#86efac' : 'var(--border)'}`, borderRadius: 10, padding: '0.85rem 1rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: perfilVehiculo ? '0.65rem' : 0 }}>
+                                        <Icon name="car" size={16} style={{ color: perfilVehiculo ? '#16a34a' : 'var(--text-muted)' }} />
+                                        <span style={{ fontWeight: 700, fontSize: '0.82rem', color: perfilVehiculo ? '#15803d' : 'var(--text-muted)' }}>
+                                            Vehículo Asignado
+                                        </span>
+                                        {!perfilVehiculo && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>Sin vehículo registrado</span>}
+                                    </div>
+                                    {perfilVehiculo && (
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.35rem 1rem' }}>
+                                            {perfilVehiculo.modelo && (
+                                                <div>
+                                                    <div style={{ fontSize: '0.65rem', color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Modelo</div>
+                                                    <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{perfilVehiculo.modelo}</div>
+                                                </div>
+                                            )}
+                                            {perfilVehiculo.marca && (
+                                                <div>
+                                                    <div style={{ fontSize: '0.65rem', color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Marca</div>
+                                                    <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{perfilVehiculo.marca}</div>
+                                                </div>
+                                            )}
+                                            {perfilVehiculo.color && (
+                                                <div>
+                                                    <div style={{ fontSize: '0.65rem', color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Color</div>
+                                                    <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{perfilVehiculo.color}</div>
+                                                </div>
+                                            )}
+                                            {perfilVehiculo.chapa && (
+                                                <div>
+                                                    <div style={{ fontSize: '0.65rem', color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Chapa / Patente</div>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.95rem', letterSpacing: '1.5px', color: '#15803d' }}>{perfilVehiculo.chapa}</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Stats rápidos */}
                             {!perfilLoading && (() => {
@@ -5455,7 +5645,7 @@ const AdminSidebar = ({ active, setActive, userRol, open, onClose }) => {
                     <Icon name="users" size={20} /> Clientes
                 </div>
             )}
-            {['admin','superadmin'].includes(userRol) && (
+            {['admin','superadmin','caja'].includes(userRol) && (
                 <div className={`nav-item ${active === 'productos' ? 'active' : ''}`} onClick={() => go('productos')}>
                     <Icon name="package" size={20} /> Productos
                 </div>
@@ -5747,7 +5937,7 @@ const AdminDashboard = ({ records, machines, onSaveMachine, onMachineCreated, on
                         <div className="animate-fade-in">
 
                             {/* ── Fila 1: KPIs recaudación + caja ── */}
-                            <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: '1.5rem' }}>
+                            <div className="stats-grid dashboard-kpi-grid" style={{ marginBottom: '1.5rem' }}>
                                 <div className="card stat-card">
                                     <div className="stat-icon bg-success-light"><Icon name="trending-up" size={22} /></div>
                                     <div>
@@ -6332,7 +6522,7 @@ const AdminDashboard = ({ records, machines, onSaveMachine, onMachineCreated, on
                     )}
 
                     {activeMenu === 'clientes' && <ClientesPage />}
-                    {activeMenu === 'productos' && <ProductosPage />}
+                    {activeMenu === 'productos' && <ProductosPage readOnly={userRol === 'caja'} />}
                     {activeMenu === 'caja' && <CajaPage userRol={userRol} />}
                     {activeMenu === 'historial' && <HistorialCajaPage />}
                     {activeMenu === 'usuarios' && <UsuariosPage userRol={userRol} />}
@@ -6350,10 +6540,200 @@ const AdminDashboard = ({ records, machines, onSaveMachine, onMachineCreated, on
     );
 };
 
+// ─── ForgotPasswordScreen ─────────────────────────────────────────────────────
+const ForgotPasswordScreen = ({ onBack }) => {
+    const [email, setEmail] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [sent, setSent] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+        try {
+            await forgotPassword(email.trim());
+            setSent(true);
+        } catch (err) {
+            setError(err.message || 'Error al enviar el email');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="h-screen w-full flex items-center justify-center bg-bg-color animate-fade-in" style={{ padding: '1rem' }}>
+            <div className="card w-full max-w-sm p-6 shadow-lg">
+                <div className="flex flex-col items-center mb-6">
+                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.75rem' }}>
+                        <Icon name="mail" size={26} style={{ color: 'var(--primary)' }} />
+                    </div>
+                    <h1 className="text-xl font-bold text-center">Recuperar contraseña</h1>
+                    <p className="text-muted text-center mt-1 text-sm">Ingresá tu email y te enviamos un enlace para restablecer tu contraseña</p>
+                </div>
+
+                {sent ? (
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ background: 'var(--success-light)', color: '#065f46', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+                            ✅ Si el email existe en el sistema, recibirás un enlace en los próximos minutos. Revisá también tu carpeta de spam.
+                        </div>
+                        <button className="btn btn-secondary w-full" onClick={onBack}>
+                            <Icon name="arrow-left" size={16} /> Volver al inicio de sesión
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        {error && (
+                            <div className="bg-danger-light text-danger p-2 rounded-md mb-4 text-xs font-medium">{error}</div>
+                        )}
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                            <div className="input-group mb-0">
+                                <label className="label text-xs">Email</label>
+                                <input
+                                    type="email"
+                                    className="input py-1.5"
+                                    placeholder="tu-email@ejemplo.com"
+                                    value={email}
+                                    onChange={e => setEmail(e.target.value)}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                            <button type="submit" className="btn btn-primary w-full mt-2 py-2 text-sm" disabled={loading}>
+                                {loading ? 'Enviando…' : <><Icon name="send" size={16} /> Enviar enlace</>}
+                            </button>
+                            <button type="button" className="btn btn-secondary w-full text-sm" onClick={onBack}>
+                                <Icon name="arrow-left" size={16} /> Volver
+                            </button>
+                        </form>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ─── ResetPasswordScreen ──────────────────────────────────────────────────────
+const ResetPasswordScreen = ({ token, onDone }) => {
+    const [newPass, setNewPass] = useState('');
+    const [confirm, setConfirm] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [verifying, setVerifying] = useState(true);
+    const [tokenValid, setTokenValid] = useState(false);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState(false);
+    const [showPass, setShowPass] = useState(false);
+
+    useEffect(() => {
+        verifyResetToken(token)
+            .then(() => setTokenValid(true))
+            .catch(err => setError(err.message))
+            .finally(() => setVerifying(false));
+    }, [token]);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (newPass !== confirm) { setError('Las contraseñas no coinciden'); return; }
+        if (newPass.length < 6)  { setError('Mínimo 6 caracteres'); return; }
+        setError('');
+        setLoading(true);
+        try {
+            await resetPassword(token, newPass);
+            setSuccess(true);
+            // Limpiar la URL del token
+            window.history.replaceState({}, '', '/');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const center = { display: 'flex', flexDirection: 'column', alignItems: 'center' };
+
+    if (verifying) return (
+        <div className="h-screen w-full flex items-center justify-center">
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Verificando enlace…</div>
+        </div>
+    );
+
+    return (
+        <div className="h-screen w-full flex items-center justify-center bg-bg-color animate-fade-in" style={{ padding: '1rem' }}>
+            <div className="card w-full max-w-sm p-6 shadow-lg">
+                <div style={{ ...center, marginBottom: '1.5rem' }}>
+                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: tokenValid ? 'var(--primary-light)' : 'var(--danger-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.75rem' }}>
+                        <Icon name={tokenValid ? 'lock' : 'alert-triangle'} size={26} style={{ color: tokenValid ? 'var(--primary)' : 'var(--danger)' }} />
+                    </div>
+                    <h1 className="text-xl font-bold text-center">
+                        {success ? '¡Contraseña actualizada!' : tokenValid ? 'Nueva contraseña' : 'Enlace inválido'}
+                    </h1>
+                </div>
+
+                {success ? (
+                    <div style={center}>
+                        <div style={{ background: 'var(--success-light)', color: '#065f46', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', fontSize: '0.875rem', textAlign: 'center', width: '100%' }}>
+                            ✅ Tu contraseña fue actualizada correctamente.
+                        </div>
+                        <button className="btn btn-primary w-full" onClick={onDone}>
+                            <Icon name="log-in" size={16} /> Ir al inicio de sesión
+                        </button>
+                    </div>
+                ) : !tokenValid ? (
+                    <div style={center}>
+                        <div className="bg-danger-light text-danger p-3 rounded-md mb-4 text-sm text-center w-full">{error}</div>
+                        <button className="btn btn-secondary w-full" onClick={onDone}>
+                            <Icon name="arrow-left" size={16} /> Volver al inicio
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        {error && <div className="bg-danger-light text-danger p-2 rounded-md mb-4 text-xs font-medium">{error}</div>}
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                            <div className="input-group mb-0">
+                                <label className="label text-xs">Nueva contraseña</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type={showPass ? 'text' : 'password'}
+                                        className="input py-1.5"
+                                        placeholder="Mínimo 6 caracteres"
+                                        value={newPass}
+                                        onChange={e => setNewPass(e.target.value)}
+                                        required autoFocus
+                                    />
+                                    <button type="button" onClick={() => setShowPass(p => !p)}
+                                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                        <Icon name={showPass ? 'eye-off' : 'eye'} size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="input-group mb-0">
+                                <label className="label text-xs">Confirmar contraseña</label>
+                                <input
+                                    type={showPass ? 'text' : 'password'}
+                                    className="input py-1.5"
+                                    placeholder="Repetí la contraseña"
+                                    value={confirm}
+                                    onChange={e => setConfirm(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <button type="submit" className="btn btn-primary w-full mt-2 py-2 text-sm" disabled={loading}>
+                                {loading ? 'Guardando…' : <><Icon name="save" size={16} /> Guardar contraseña</>}
+                            </button>
+                        </form>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ─── LoginScreen ──────────────────────────────────────────────────────────────
 const LoginScreen = ({ onLogin }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [showForgot, setShowForgot] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -6366,8 +6746,10 @@ const LoginScreen = ({ onLogin }) => {
         }
     };
 
+    if (showForgot) return <ForgotPasswordScreen onBack={() => setShowForgot(false)} />;
+
     return (
-        <div className="h-screen w-full flex items-center justify-center bg-bg-color animate-fade-in">
+        <div className="h-screen w-full flex items-center justify-center bg-bg-color animate-fade-in" style={{ padding: '1rem' }}>
             <div className="card w-full max-w-sm p-6 shadow-lg">
                 <div className="flex flex-col items-center mb-6">
                     <img src="/logo.png" alt="MaisonTech App" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', marginBottom: '0.75rem', boxShadow: '0 4px 16px rgba(0,0,0,0.15)' }} />
@@ -6395,7 +6777,16 @@ const LoginScreen = ({ onLogin }) => {
                         />
                     </div>
                     <div className="input-group mb-0">
-                        <label className="label text-xs">Contraseña</label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                            <label className="label text-xs" style={{ margin: 0 }}>Contraseña</label>
+                            <button
+                                type="button"
+                                onClick={() => setShowForgot(true)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 500, padding: 0 }}
+                            >
+                                ¿Olvidaste tu contraseña?
+                            </button>
+                        </div>
                         <input
                             type="password"
                             className="input py-1.5"
@@ -6406,12 +6797,11 @@ const LoginScreen = ({ onLogin }) => {
                             required
                         />
                     </div>
-                    
+
                     <button type="submit" className="btn btn-primary w-full mt-2 py-2 text-sm">
                         <Icon name="log-in" size={16} /> Iniciar Sesión
                     </button>
                 </form>
-
             </div>
         </div>
     );
@@ -6429,6 +6819,8 @@ function getAuthFromToken() {
 }
 
 const App = () => {
+    // Detectar token de reset en la URL (?reset=TOKEN)
+    const [resetToken] = useState(() => new URLSearchParams(window.location.search).get('reset'));
     const [auth, setAuth] = useState(() => getAuthFromToken());
     const [records, setRecords] = useState([]);
     const [machines, setMachines] = useState([]);
@@ -6459,6 +6851,11 @@ const App = () => {
         clearToken();
         setAuth(null);
     };
+
+    // Si hay token de reset en la URL, mostrar pantalla de reset (independiente de auth)
+    if (resetToken) {
+        return <ResetPasswordScreen token={resetToken} onDone={() => window.location.replace('/')} />;
+    }
 
     if (!auth) {
         return <LoginScreen onLogin={() => setAuth(getAuthFromToken())} />;

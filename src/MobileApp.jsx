@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { App as CapacitorApp } from '@capacitor/app';
 import {
   ArrowLeft, CheckCircle, XCircle, MapPin, Camera, Save,
   History, Route, LogOut, ChevronRight, AlertCircle, Wrench,
   Calculator, X, Plus, Trash2, ClipboardList, Navigation, Map, QrCode,
-  ClipboardCheck, Bell, Search,
+  ClipboardCheck, Bell, Search, TrendingUp, TrendingDown, Minus,
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import MapView from './MapView';
-import { getTipos, createRecord, uploadRecordImage, updateStop, addStopToRun, updateRouteRun, getRecords, createMaintenance, getLastRecord, getMisTareas, getMiHistorial, aceptarRecorrido } from './api';
+import { getTipos, createRecord, uploadRecordImage, updateStop, addStopToRun, updateRouteRun, getRecords, createMaintenance, getLastRecord, getMisTareas, getMiHistorial, aceptarRecorrido, getCatalogo, getItemTiposCat } from './api';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const fmt = (n) => Math.round(n || 0).toLocaleString('es-PY');
@@ -46,17 +47,35 @@ function computeReadonly(campos, values, prevValues = {}) {
 
 // ─── PreCalcModal ─────────────────────────────────────────────────────────────
 function PreCalcModal({ campos, allValues, onClose }) {
+  function fmtNum(value) {
+    if (value === '' || value === null || value === undefined) return value ?? '';
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!isNaN(n)) return n.toLocaleString('es-PY', { maximumFractionDigits: 2 });
+    return value; // texto plano (observaciones, etc.)
+  }
+
   const Row = ({ label, value }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: '1px solid var(--border)' }}>
       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{label}</span>
       <span style={{ fontSize: '0.85rem', fontWeight: 700, color: parseFloat(value) < 0 ? '#ef4444' : 'var(--text-main)' }}>
-        {typeof value === 'number' ? value.toLocaleString('es-PY', { maximumFractionDigits: 2 }) : value}
+        {fmtNum(value)}
       </span>
     </div>
   );
 
   const visibleCampos = campos.filter(c => c.tipo !== 'constant');
   const groups = [...new Set(visibleCampos.map(c => c.grupo))];
+
+  // ── Indicador de profit ──────────────────────────────────────────────────
+  // Busca el campo readonly más representativo: prioriza "total", luego "recaudac", luego el último
+  const readonlyCampos = visibleCampos.filter(c => c.readonly && c.tipo !== 'checkbox' && c.tipo !== 'select' && c.tipo !== 'textarea');
+  const mainCampo =
+    readonlyCampos.find(c => /total/i.test(c.key + c.label)) ||
+    readonlyCampos.find(c => /recaudac/i.test(c.key + c.label)) ||
+    readonlyCampos[readonlyCampos.length - 1];
+  const mainVal  = mainCampo ? Number(allValues[mainCampo.key] ?? 0) : null;
+  const isProfit = mainVal !== null && mainVal > 0;
+  const isLoss   = mainVal !== null && mainVal < 0;
 
   return (
     <div style={{
@@ -68,6 +87,42 @@ function PreCalcModal({ campos, allValues, onClose }) {
           <span style={{ fontWeight: 700, fontSize: '1rem' }}>Información Cálculo</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.2rem' }}><X size={20} /></button>
         </div>
+
+        {/* ── Tarjeta de profit ── */}
+        {mainCampo && mainVal !== null && (
+          <div style={{
+            borderRadius: 12,
+            padding: '0.85rem 1rem',
+            marginBottom: '1.1rem',
+            background: isProfit ? 'rgba(16,185,129,0.1)' : isLoss ? 'rgba(239,68,68,0.08)' : 'rgba(156,163,175,0.1)',
+            border: `1.5px solid ${isProfit ? 'rgba(16,185,129,0.35)' : isLoss ? 'rgba(239,68,68,0.3)' : 'rgba(156,163,175,0.25)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
+          }}>
+            <div>
+              <div style={{ fontSize: '0.62rem', fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isProfit ? '#065f46' : isLoss ? '#991b1b' : 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                {isProfit ? 'Con ganancia' : isLoss ? 'Sin ganancia' : 'Resultado neutro'}
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: isProfit ? '#10b981' : isLoss ? '#ef4444' : 'var(--text-muted)', letterSpacing: '-0.5px', lineHeight: 1 }}>
+                {fmtNum(mainVal)} <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>Gs.</span>
+              </div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                {mainCampo.label}
+              </div>
+            </div>
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+              background: isProfit ? 'rgba(16,185,129,0.18)' : isLoss ? 'rgba(239,68,68,0.12)' : 'rgba(156,163,175,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {isProfit
+                ? <TrendingUp size={24} color="#10b981" strokeWidth={2.5} />
+                : isLoss
+                ? <TrendingDown size={24} color="#ef4444" strokeWidth={2.5} />
+                : <Minus size={24} color="#9ca3af" strokeWidth={2.5} />
+              }
+            </div>
+          </div>
+        )}
 
         {groups.map(grupo => {
           const groupCampos = visibleCampos.filter(c => c.grupo === grupo);
@@ -423,26 +478,57 @@ function RecordForm({ machine, stop, runId, tipos, onSaved, onBack }) {
 }
 
 // ─── MantencionForm ───────────────────────────────────────────────────────────
-const COMMON_ITEMS = ['Set cables', 'Tragamonedas', 'Teclado de 8', 'MQ USADAS', 'SSR', 'Fuente de poder', 'Pantalla', 'Motor'];
-
 function MantencionForm({ machine, runId, onSaved, onBack }) {
-  const [descripcion, setDescripcion] = useState('');
-  const [monto, setMonto]             = useState('');
-  const [checkedItems, setCheckedItems] = useState([]);
-  const [customItem, setCustomItem]   = useState('');
-  const [saving, setSaving]           = useState(false);
-  const [error, setError]             = useState('');
+  const [descripcion, setDescripcion]   = useState('');
+  const [monto, setMonto]               = useState('');
+  const [checkedItems, setCheckedItems] = useState([]); // [{ nombre, itemId? }]
+  const [customItem, setCustomItem]     = useState('');
+  const [saving, setSaving]             = useState(false);
+  const [error, setError]               = useState('');
+  const [catalogoGrupos, setCatalogoGrupos] = useState([]); // [{ tipo, items[] }]
+  const [loadingCat, setLoadingCat]     = useState(true);
 
-  function toggleItem(item) {
-    setCheckedItems(prev =>
-      prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
-    );
+  // Cargar catálogo al montar — excluye tipo "Maquina"
+  useEffect(() => {
+    (async () => {
+      try {
+        const [tipos, items] = await Promise.all([getItemTiposCat(), getCatalogo({ todos: false })]);
+        // Filtrar tipos que no sean "Maquina" (case-insensitive)
+        const tiposValidos = tipos.filter(t => {
+          const n = (t.itc_nombre || '').toLowerCase();
+          return n !== 'maquina' && n !== 'máquina';
+        });
+        const grupos = tiposValidos.map(tipo => ({
+          tipo: tipo.itc_nombre,
+          tipoId: tipo.itc_id,
+          items: items.filter(it => it.item_cat_id === tipo.itc_id),
+        })).filter(g => g.items.length > 0);
+        setCatalogoGrupos(grupos);
+      } catch {
+        setCatalogoGrupos([]);
+      } finally {
+        setLoadingCat(false);
+      }
+    })();
+  }, []);
+
+  function toggleItem(nombre, itemId) {
+    setCheckedItems(prev => {
+      const exists = prev.find(i => i.nombre === nombre);
+      return exists ? prev.filter(i => i.nombre !== nombre) : [...prev, { nombre, itemId }];
+    });
+  }
+
+  function isChecked(nombre) {
+    return checkedItems.some(i => i.nombre === nombre);
   }
 
   function addCustomItem() {
     const t = customItem.trim();
     if (!t) return;
-    setCheckedItems(prev => prev.includes(t) ? prev : [...prev, t]);
+    if (!checkedItems.find(i => i.nombre === t)) {
+      setCheckedItems(prev => [...prev, { nombre: t, itemId: null }]);
+    }
     setCustomItem('');
   }
 
@@ -459,7 +545,7 @@ function MantencionForm({ machine, runId, onSaved, onBack }) {
         runId:       runId || null,
         descripcion: descripcion.trim() || 'Mantención en ruta',
         monto:       parseFloat(monto) || 0,
-        items:       checkedItems,
+        items:       checkedItems.map(i => i.nombre),
       });
       onSaved();
     } catch (err) {
@@ -490,32 +576,63 @@ function MantencionForm({ machine, runId, onSaved, onBack }) {
           <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <ClipboardList size={13} /> Lista de Productos / Repuestos
           </div>
-          {COMMON_ITEMS.map(item => (
-            <button
-              key={item}
-              onClick={() => toggleItem(item)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%',
-                padding: '0.55rem 0.75rem', marginBottom: '0.35rem',
-                borderRadius: 'var(--radius-sm)',
-                border: `1px solid ${checkedItems.includes(item) ? 'rgba(79,70,229,0.5)' : 'var(--border)'}`,
-                background: checkedItems.includes(item) ? 'rgba(79,70,229,0.08)' : 'var(--bg-color)',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <div style={{
-                width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-                border: `2px solid ${checkedItems.includes(item) ? 'var(--primary)' : 'var(--border)'}`,
-                background: checkedItems.includes(item) ? 'var(--primary)' : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {checkedItems.includes(item) && <CheckCircle size={10} color="white" />}
+          {loadingCat ? (
+            <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+              Cargando productos...
+            </div>
+          ) : catalogoGrupos.length > 0 ? (
+            catalogoGrupos.map(grupo => (
+              <div key={grupo.tipo} style={{ marginBottom: '0.75rem' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.4rem', paddingLeft: '0.25rem' }}>
+                  {grupo.tipo}
+                </div>
+                {grupo.items.map(item => {
+                  const sinStock = (item.item_stock ?? 0) <= 0;
+                  const checked  = isChecked(item.item_nombre);
+                  return (
+                    <button
+                      key={item.item_id}
+                      onClick={() => toggleItem(item.item_nombre, item.item_id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%',
+                        padding: '0.55rem 0.75rem', marginBottom: '0.35rem',
+                        borderRadius: 'var(--radius-sm)',
+                        border: `1px solid ${checked ? 'rgba(79,70,229,0.5)' : sinStock ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
+                        background: checked ? 'rgba(79,70,229,0.08)' : sinStock ? 'rgba(245,158,11,0.05)' : 'var(--bg-color)',
+                        cursor: 'pointer', textAlign: 'left', opacity: sinStock && !checked ? 0.75 : 1,
+                      }}
+                    >
+                      <div style={{
+                        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                        border: `2px solid ${checked ? 'var(--primary)' : sinStock ? '#f59e0b' : 'var(--border)'}`,
+                        background: checked ? 'var(--primary)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {checked && <CheckCircle size={10} color="white" />}
+                      </div>
+                      <span style={{ flex: 1, fontSize: '0.85rem', color: checked ? 'var(--primary)' : 'var(--text-main)', fontWeight: checked ? 600 : 400 }}>
+                        {item.item_nombre}
+                      </span>
+                      {sinStock ? (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#d97706', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 4, padding: '0.1rem 0.4rem', whiteSpace: 'nowrap' }}>
+                          Sin stock
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#059669', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 4, padding: '0.1rem 0.4rem', whiteSpace: 'nowrap' }}>
+                          {item.item_stock} unid.
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <span style={{ fontSize: '0.85rem', color: checkedItems.includes(item) ? 'var(--primary)' : 'var(--text-main)', fontWeight: checkedItems.includes(item) ? 600 : 400 }}>
-                {item}
-              </span>
-            </button>
-          ))}
+            ))
+          ) : (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '0.75rem', lineHeight: 1.5 }}>
+              No hay productos en el catálogo.<br />
+              Agregá productos en Electrónico u Otros desde el panel de administración.
+            </div>
+          )}
 
           {/* Custom item */}
           <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
@@ -532,12 +649,12 @@ function MantencionForm({ machine, runId, onSaved, onBack }) {
             </button>
           </div>
 
-          {/* Items seleccionados que no están en la lista default */}
-          {checkedItems.filter(i => !COMMON_ITEMS.includes(i)).map(item => (
-            <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(79,70,229,0.5)', background: 'rgba(79,70,229,0.08)' }}>
+          {/* Items personalizados (sin itemId) seleccionados manualmente */}
+          {checkedItems.filter(i => i.itemId === null).map(item => (
+            <div key={item.nombre} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(79,70,229,0.5)', background: 'rgba(79,70,229,0.08)' }}>
               <CheckCircle size={14} color="var(--primary)" />
-              <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 600 }}>{item}</span>
-              <button onClick={() => toggleItem(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0, display: 'flex' }}>
+              <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 600 }}>{item.nombre}</span>
+              <button onClick={() => toggleItem(item.nombre, null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0, display: 'flex' }}>
                 <Trash2 size={14} />
               </button>
             </div>
@@ -911,6 +1028,42 @@ function MachineSearchModal({ machines, activeRun, onSelect, onScanQR, onClose }
   );
 }
 
+// ─── StopQR: muestra el QR de la máquina con modal para ampliar ──────────────
+function StopQR({ machineId }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      {/* QR pequeño inline — toca para ampliar */}
+      <div
+        onClick={() => setExpanded(true)}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.5rem', padding: '0.45rem 0.6rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-color)', border: '1px solid var(--border)', cursor: 'pointer' }}
+        title="Tocar para ver QR grande"
+      >
+        <QRCodeSVG value={machineId} size={52} level="M" />
+        <div>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>QR Máquina</div>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.5px' }}>{machineId}</div>
+          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 1 }}>Toca para ampliar</div>
+        </div>
+      </div>
+
+      {/* Modal QR grande */}
+      {expanded && (
+        <div
+          onClick={() => setExpanded(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}
+        >
+          <div style={{ background: 'white', borderRadius: 16, padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+            <QRCodeSVG value={machineId} size={220} level="H" />
+            <div style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: '1px', color: '#111' }}>{machineId}</div>
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.82rem' }}>Toca para cerrar</div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── StopList (En Ruta) ──────────────────────────────────────────────────────
 function StopList({ run, machines, onAction, onSkip, onFinish, onScanQR, onVerMapa, onAgregarMaquina }) {
   const stops           = run.stops ?? [];
@@ -921,32 +1074,40 @@ function StopList({ run, machines, onAction, onSkip, onFinish, onScanQR, onVerMa
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header */}
-      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0.75rem 1rem', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '0.65rem 1rem', flexShrink: 0 }}>
+        {/* Fila título + botones */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: '1rem' }}>Ruta en curso</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
               {stops.filter(s => s.status === 'done').length} / {stops.length} paradas completadas
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-            <button
-              onClick={onScanQR}
-              title="Escanear QR de máquina"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.65rem', borderRadius: 'var(--radius-sm)', background: 'rgba(79,70,229,0.1)', border: '1px solid rgba(79,70,229,0.3)', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
-            >
-              <QrCode size={15} /> Escanear
-            </button>
-            {fullRouteUrl && (
-              <a
-                href={fullRouteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.65rem', borderRadius: 'var(--radius-sm)', background: '#1a73e8', color: 'white', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 700, boxShadow: '0 2px 6px rgba(26,115,232,0.35)' }}
+          <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
+            {/* Ver Mapa */}
+            {onVerMapa && (
+              <button
+                onClick={onVerMapa}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.42rem 0.65rem', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary)', color: 'white', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 6px rgba(79,70,229,0.35)', whiteSpace: 'nowrap' }}
               >
-                <Map size={15} /> Maps
-              </a>
+                <MapPin size={13} /> Mapa del recorrido
+              </button>
             )}
+            {/* Agregar máquina */}
+            <button
+              onClick={onAgregarMaquina}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.42rem 0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-color)', color: 'var(--text-main)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              <Plus size={13} /> Agregar máquina
+            </button>
+            {/* Cancelar / Finalizar */}
+            <button
+              onClick={onFinish}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.42rem 0.65rem', borderRadius: 'var(--radius-sm)', border: 'none', background: allHandled ? '#10b981' : '#ef4444', color: 'white', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {allHandled ? <CheckCircle size={13} /> : <XCircle size={13} />}
+              {allHandled ? 'Finalizar Ruta' : 'Cancelar Ruta'}
+            </button>
           </div>
         </div>
       </div>
@@ -993,33 +1154,22 @@ function StopList({ run, machines, onAction, onSkip, onFinish, onScanQR, onVerMa
                   {isNext   && <MapPin size={18} color="#4f46e5" />}
                 </div>
 
-                {isNext && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
-                    {/* Navegar a esta parada */}
-                    {machine?.coords && (
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${machine.coords[0]},${machine.coords[1]}&travelmode=driving`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', padding: '0.45rem', borderRadius: 'var(--radius-sm)', background: '#1a73e8', color: 'white', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 600 }}
-                      >
-                        <Navigation size={13} /> Navegar aquí
-                      </a>
-                    )}
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        onClick={() => machine && onAction(stop, machine)}
-                        style={{ flex: 2, padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(79,70,229,0.4)', background: 'rgba(79,70,229,0.08)', color: '#4f46e5', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
-                      >
-                        <ChevronRight size={14} /> Registrar
-                      </button>
-                      <button
-                        onClick={() => onSkip(stop)}
-                        style={{ flex: 1, padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#b91c1c', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}
-                      >
-                        Saltar
-                      </button>
-                    </div>
+                {/* QR de la máquina — visible en todas las paradas */}
+                {machine && (
+                  <StopQR machineId={stop.machineId} />
+                )}
+
+                {/* Botón de navegación — solo en la siguiente parada */}
+                {isNext && machine?.coords && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${machine.coords[0]},${machine.coords[1]}&travelmode=driving`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', background: '#1a73e8', color: 'white', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 700 }}
+                    >
+                      <Navigation size={14} /> Navegar en Maps
+                    </a>
                   </div>
                 )}
               </div>
@@ -1028,43 +1178,6 @@ function StopList({ run, machines, onAction, onSkip, onFinish, onScanQR, onVerMa
         )}
       </div>
 
-      {/* Footer */}
-      <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {/* Botón Ver Mapa — grande y prominente */}
-        {onVerMapa && (
-          <button
-            onClick={onVerMapa}
-            style={{
-              width: '100%', padding: '0.875rem', borderRadius: 'var(--radius-md)',
-              background: 'var(--primary)', color: 'white', border: 'none', cursor: 'pointer',
-              fontWeight: 700, fontSize: '1rem',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.55rem',
-              boxShadow: '0 4px 14px rgba(79,70,229,0.35)',
-            }}
-          >
-            <MapPin size={20} /> Ver Mapa del Recorrido
-          </button>
-        )}
-        {/* Botón Agregar Máquina */}
-        <button
-          onClick={onAgregarMaquina}
-          style={{
-            width: '100%', padding: '0.75rem', borderRadius: 'var(--radius-md)',
-            background: 'var(--bg-color)', color: 'var(--text-main)',
-            border: '1px dashed var(--border)', cursor: 'pointer',
-            fontWeight: 600, fontSize: '0.88rem',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-          }}
-        >
-          <Plus size={17} /> Agregar máquina fuera de ruta
-        </button>
-        <button
-          onClick={onFinish}
-          style={{ width: '100%', padding: '0.875rem', borderRadius: 'var(--radius-md)', background: allHandled ? '#10b981' : '#ef4444', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-        >
-          {allHandled ? <><CheckCircle size={18} /> Finalizar Ruta</> : <><XCircle size={18} /> Cancelar Ruta</>}
-        </button>
-      </div>
     </div>
   );
 }

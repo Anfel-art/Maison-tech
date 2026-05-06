@@ -31,6 +31,7 @@ function formatUser(u, rolSolicitante) {
     nombre:    u.nombre    ?? u.usu_nombre,
     user:      u.user      ?? u.usu_user,
     rol:       u.rol       ?? u.usu_rol,
+    email:     u.email     ?? u.usu_email ?? null,
     fechacre:  u.fechacre  ?? u.usu_fechacre,
     fechamod:  u.fechamod  ?? u.usu_fechamod,
     password:  puedeVerPassword(rolSolicitante, u.rol ?? u.usu_rol)
@@ -41,7 +42,7 @@ function formatUser(u, rolSolicitante) {
 
 const SELECT_USU = `
   SELECT usu_id as id, usu_nombre as nombre, usu_user as user, usu_rol as rol,
-         usu_fechacre as fechacre, usu_fechamod as fechamod, usu_pass_plain
+         usu_email as email, usu_fechacre as fechacre, usu_fechamod as fechamod, usu_pass_plain
   FROM usuario
 `;
 
@@ -67,7 +68,7 @@ router.get('/actividad', soloAdmin, (req, res) => {
 
 // POST /api/usuarios
 router.post('/', soloAdmin, (req, res) => {
-  const { nombre, user, pass, rol } = req.body;
+  const { nombre, user, pass, rol, email } = req.body;
   if (!nombre?.trim() || !user?.trim() || !pass?.trim() || !rol)
     return res.status(400).json({ error: 'nombre, user, pass y rol son requeridos' });
 
@@ -78,17 +79,19 @@ router.post('/', soloAdmin, (req, res) => {
   if (db.prepare('SELECT 1 FROM usuario WHERE usu_user = ?').get(user.trim()))
     return res.status(409).json({ error: 'Ya existe un usuario con ese nombre de usuario' });
 
+  const emailClean = email?.trim().toLowerCase() || null;
   const hash = bcrypt.hashSync(pass, 10);
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const result = db.prepare(
-    'INSERT INTO usuario (usu_nombre, usu_user, usu_pass, usu_rol, usu_fechacre, usu_pass_plain) VALUES (?,?,?,?,?,?)'
-  ).run(nombre.trim(), user.trim(), hash, rol, now, pass.trim());
+    'INSERT INTO usuario (usu_nombre, usu_user, usu_pass, usu_rol, usu_email, usu_fechacre, usu_pass_plain) VALUES (?,?,?,?,?,?,?)'
+  ).run(nombre.trim(), user.trim(), hash, rol, emailClean, now, pass.trim());
 
   res.status(201).json(formatUser({
     id: result.lastInsertRowid,
     nombre: nombre.trim(),
     user: user.trim(),
     rol,
+    email: emailClean,
     fechacre: now,
     fechamod: null,
     usu_pass_plain: pass.trim(),
@@ -106,7 +109,7 @@ router.patch('/:id', soloAdmin, (req, res) => {
   if (target.usu_rol === 'admin' && req.user.rol !== 'superadmin')
     return res.status(403).json({ error: 'Solo el superadmin puede modificar a otros administradores' });
 
-  const { nombre, user, pass, rol } = req.body;
+  const { nombre, user, pass, rol, email } = req.body;
 
   if (rol) {
     const permitidos = rolesPermitidos(req.user.rol);
@@ -124,21 +127,57 @@ router.patch('/:id', soloAdmin, (req, res) => {
   const nuevoRol      = rol             ?? target.usu_rol;
   const nuevoPass     = pass ? bcrypt.hashSync(pass, 10) : target.usu_pass;
   const nuevoPlain    = pass?.trim()    ? pass.trim() : target.usu_pass_plain;
+  const nuevoEmail    = email !== undefined ? (email?.trim().toLowerCase() || null) : target.usu_email;
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
   db.prepare(
-    'UPDATE usuario SET usu_nombre=?, usu_user=?, usu_pass=?, usu_rol=?, usu_fechamod=?, usu_pass_plain=? WHERE usu_id=?'
-  ).run(nuevoNombre, nuevoUser, nuevoPass, nuevoRol, now, nuevoPlain, req.params.id);
+    'UPDATE usuario SET usu_nombre=?, usu_user=?, usu_pass=?, usu_rol=?, usu_email=?, usu_fechamod=?, usu_pass_plain=? WHERE usu_id=?'
+  ).run(nuevoNombre, nuevoUser, nuevoPass, nuevoRol, nuevoEmail, now, nuevoPlain, req.params.id);
 
   res.json(formatUser({
     id: Number(req.params.id),
     nombre: nuevoNombre,
     user: nuevoUser,
     rol: nuevoRol,
+    email: nuevoEmail,
     fechacre: target.usu_fechacre,
     fechamod: now,
     usu_pass_plain: nuevoPlain,
   }, req.user.rol));
+});
+
+// GET /api/usuarios/:id/vehiculo
+router.get('/:id/vehiculo', soloAdmin, (req, res) => {
+  const v = db.prepare('SELECT * FROM vehiculo WHERE usu_id = ?').get(req.params.id);
+  if (!v) return res.json(null);
+  res.json({ id: v.vei_id, modelo: v.vei_modelo, marca: v.vei_marca, color: v.vei_color, chapa: v.vei_chapa });
+});
+
+// PUT /api/usuarios/:id/vehiculo — crea o actualiza el vehículo del usuario
+router.put('/:id/vehiculo', soloAdmin, (req, res) => {
+  const { modelo, marca, color, chapa } = req.body;
+  if (!modelo?.trim()) return res.status(400).json({ error: 'El modelo es requerido' });
+
+  const usu = db.prepare('SELECT usu_id, usu_rol FROM usuario WHERE usu_id = ?').get(req.params.id);
+  if (!usu) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const existing = db.prepare('SELECT vei_id FROM vehiculo WHERE usu_id = ?').get(req.params.id);
+  if (existing) {
+    db.prepare('UPDATE vehiculo SET vei_modelo=?, vei_marca=?, vei_color=?, vei_chapa=? WHERE usu_id=?')
+      .run(modelo.trim(), marca?.trim() || null, color?.trim() || null, chapa?.trim() || null, req.params.id);
+  } else {
+    db.prepare('INSERT INTO vehiculo (vei_modelo, vei_marca, vei_color, vei_chapa, usu_id) VALUES (?,?,?,?,?)')
+      .run(modelo.trim(), marca?.trim() || null, color?.trim() || null, chapa?.trim() || null, req.params.id);
+  }
+
+  const v = db.prepare('SELECT * FROM vehiculo WHERE usu_id = ?').get(req.params.id);
+  res.json({ id: v.vei_id, modelo: v.vei_modelo, marca: v.vei_marca, color: v.vei_color, chapa: v.vei_chapa });
+});
+
+// DELETE /api/usuarios/:id/vehiculo
+router.delete('/:id/vehiculo', soloAdmin, (req, res) => {
+  db.prepare('DELETE FROM vehiculo WHERE usu_id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // DELETE /api/usuarios/:id
