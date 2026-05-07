@@ -37,3 +37,6 @@ server/*.sqlite3-wal
 
 # Uploaded files
 server/uploads/
+
+# Docker persistent data (DB + uploads en producción)
+data/
