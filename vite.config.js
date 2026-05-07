@@ -42,6 +42,8 @@ export default defineConfig({
       },
 
       workbox: {
+        // Permitir bundles > 2 MB en precache
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
         // Forzar nuevo SW en cada build cambiando el additionalManifestEntries
         additionalManifestEntries: [
           { url: '/', revision: Date.now().toString() },
