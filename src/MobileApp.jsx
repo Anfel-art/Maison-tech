@@ -1287,6 +1287,103 @@ function HistoryView({ completedRuns }) {
   );
 }
 
+// ─── CompletedView ────────────────────────────────────────────────────────────
+function CompletedView({ runInfo, onGoHome, onGoHistory }) {
+  if (!runInfo) return null;
+  const stops      = runInfo.stops ?? [];
+  const doneCount  = stops.filter(s => s.status === 'done').length;
+  const failCount  = stops.filter(s => s.status === 'failed').length;
+  const isCompleted = runInfo.finalStatus === 'completed';
+
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', padding: '2.5rem 1.5rem', textAlign: 'center',
+      background: 'var(--bg-color)', overflowY: 'auto',
+    }}>
+      {/* Ícono central */}
+      <div style={{
+        width: 110, height: 110, borderRadius: '50%',
+        background: isCompleted ? '#d1fae5' : '#fee2e2',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: '1.75rem',
+        boxShadow: isCompleted
+          ? '0 0 0 18px rgba(16,185,129,0.1), 0 0 0 36px rgba(16,185,129,0.05)'
+          : '0 0 0 18px rgba(239,68,68,0.1), 0 0 0 36px rgba(239,68,68,0.05)',
+      }}>
+        {isCompleted
+          ? <CheckCircle size={56} color="#10b981" />
+          : <XCircle    size={56} color="#ef4444" />}
+      </div>
+
+      {/* Título */}
+      <div style={{
+        fontWeight: 800, fontSize: '1.6rem', marginBottom: '0.4rem',
+        color: isCompleted ? '#065f46' : '#7f1d1d',
+        letterSpacing: '-0.3px',
+      }}>
+        {isCompleted ? '¡Recorrido completado!' : 'Recorrido cancelado'}
+      </div>
+      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '2.25rem', fontWeight: 500 }}>
+        Recorrido #{runInfo.id}
+      </div>
+
+      {/* Tarjetas de estadísticas */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2.5rem', width: '100%', maxWidth: 320 }}>
+        <div style={{
+          flex: 1, background: '#d1fae5', borderRadius: 14, padding: '1rem 0.5rem',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
+        }}>
+          <CheckCircle size={22} color="#10b981" />
+          <div style={{ fontWeight: 800, fontSize: '1.5rem', color: '#065f46', lineHeight: 1 }}>{doneCount}</div>
+          <div style={{ fontSize: '0.7rem', color: '#047857', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Completadas</div>
+        </div>
+        <div style={{
+          flex: 1, background: failCount > 0 ? '#fee2e2' : '#f3f4f6', borderRadius: 14, padding: '1rem 0.5rem',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
+        }}>
+          <XCircle size={22} color={failCount > 0 ? '#ef4444' : '#9ca3af'} />
+          <div style={{ fontWeight: 800, fontSize: '1.5rem', color: failCount > 0 ? '#7f1d1d' : '#6b7280', lineHeight: 1 }}>{failCount}</div>
+          <div style={{ fontSize: '0.7rem', color: failCount > 0 ? '#b91c1c' : '#9ca3af', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Saltadas</div>
+        </div>
+        <div style={{
+          flex: 1, background: '#ede9fe', borderRadius: 14, padding: '1rem 0.5rem',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
+        }}>
+          <ClipboardCheck size={22} color="#7c3aed" />
+          <div style={{ fontWeight: 800, fontSize: '1.5rem', color: '#4c1d95', lineHeight: 1 }}>{stops.length}</div>
+          <div style={{ fontSize: '0.7rem', color: '#6d28d9', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Total</div>
+        </div>
+      </div>
+
+      {/* Botones */}
+      <button
+        onClick={onGoHistory}
+        style={{
+          width: '100%', maxWidth: 320, padding: '0.95rem', borderRadius: 14,
+          background: 'var(--primary)', color: 'white', border: 'none',
+          fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', marginBottom: '0.75rem',
+          boxShadow: '0 4px 14px rgba(79,70,229,0.35)',
+        }}
+      >
+        <History size={15} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+        Ver en historial
+      </button>
+      <button
+        onClick={onGoHome}
+        style={{
+          width: '100%', maxWidth: 320, padding: '0.9rem', borderRadius: 14,
+          background: 'var(--surface)', color: 'var(--text-main)',
+          border: '1px solid var(--border)',
+          fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer',
+        }}
+      >
+        Ir al inicio
+      </button>
+    </div>
+  );
+}
+
 // ─── TareasView ──────────────────────────────────────────────────────────────
 function TareasView({ tareas, loading, onAceptar, onRefresh }) {
   const [aceptando, setAceptando] = React.useState(null); // runId en proceso
@@ -1558,6 +1655,7 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
   const [loadingTareas, setLoadingTareas] = useState(false);
   const [assignedRun, setAssignedRun]     = useState(null); // run aceptado → mapa asignado
   const [completedRuns, setCompletedRuns] = useState([]);   // historial de recorridos
+  const [completedRunInfo, setCompletedRunInfo] = useState(null); // snapshot del run recién finalizado
   const [machineSearchOpen, setMachineSearchOpen] = useState(false); // modal buscar máquina
 
   // ── Back button (Android hardware — via @capacitor/app) ────────────────────
@@ -1596,6 +1694,24 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
     loadTareas();
     loadHistorial();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Acción pendiente desde ScanPage (/scan/:id → boton → localStorage) ────
+  useEffect(() => {
+    if (!machines?.length) return;
+    const raw = localStorage.getItem('scan_pending');
+    if (!raw) return;
+    try {
+      const { machineId, action } = JSON.parse(raw);
+      localStorage.removeItem('scan_pending');
+      const machine = machines.find(m => m.id === machineId);
+      if (!machine) return;
+      setSelectedMachine(machine);
+      setSelectedStop(null);
+      setView(action === 'mantencion' ? 'mantencion' : 'record');
+    } catch {
+      localStorage.removeItem('scan_pending');
+    }
+  }, [machines]);
 
   async function loadTareas() {
     setLoadingTareas(true);
@@ -1685,12 +1801,14 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
 
   async function handleFinish() {
     if (!activeRun) return;
-    const allDone = activeRun.stops.every(s => s.status !== 'pending');
-    await updateRouteRun(activeRun.id, { status: allDone ? 'completed' : 'cancelled' }).catch(() => null);
+    const allDone  = activeRun.stops.every(s => s.status !== 'pending');
+    const snapshot = { ...activeRun, finalStatus: allDone ? 'completed' : 'cancelled' };
+    await updateRouteRun(activeRun.id, { status: snapshot.finalStatus }).catch(() => null);
     setActiveRun(null);
-    setAssignedRun(null); // limpiar el run asignado al terminar
-    await Promise.all([loadTareas(), loadHistorial()]); // refrescar tareas e historial
-    setView('home');
+    setAssignedRun(null);
+    await Promise.all([loadTareas(), loadHistorial()]);
+    setCompletedRunInfo(snapshot);
+    setView('completed');
   }
 
   // Actualiza el stop indicado a 'done' en activeRun y assignedRun; devuelve allDone
@@ -1894,7 +2012,7 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
           runId={activeRun?.id}
           tipos={tipos}
           onSaved={handleRecordSaved}
-          onBack={() => setView(selectedStop ? 'stopAction' : 'run')}
+          onBack={() => setView(selectedStop ? 'stopAction' : activeRun ? 'run' : 'home')}
         />
       </div>
     );
@@ -1907,7 +2025,7 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
           machine={selectedMachine}
           runId={activeRun?.id}
           onSaved={handleMantencionSaved}
-          onBack={() => setView('stopAction')}
+          onBack={() => setView(selectedStop ? 'stopAction' : activeRun ? 'run' : 'home')}
         />
       </div>
     );
@@ -1980,6 +2098,13 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
           />
         )}
         {view === 'history' && <HistoryView completedRuns={completedRuns} />}
+        {view === 'completed' && (
+          <CompletedView
+            runInfo={completedRunInfo}
+            onGoHome={() => { setCompletedRunInfo(null); setView('home'); }}
+            onGoHistory={() => { setCompletedRunInfo(null); setView('history'); }}
+          />
+        )}
       </div>
 
       {/* Bottom nav — paddingBottom incluye el safe-area para la barra de gestos */}
@@ -1991,7 +2116,7 @@ export default function MobileApp({ machines, onLogout, onRecordSaved, userId })
               key={id}
               onClick={() => {
                 if (id === 'logout') onLogout();
-                else setView(id); // 'home' siempre va a HomeView (muestra la tarjeta del recorrido)
+                else { setCompletedRunInfo(null); setView(id); }
               }}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

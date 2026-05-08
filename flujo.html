@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>MaisonTech — Diagrama de Flujo</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #d6dce9; }
+h1 { text-align:center; color:#1e2d45; font-size:1.05rem; font-weight:800;
+     letter-spacing:2px; text-transform:uppercase; padding:16px 0 6px; }
+#controls { text-align:center; margin-bottom:6px; display:flex;
+            justify-content:center; gap:8px; align-items:center; }
+#controls button { background:#3B4F6B; color:#fff; border:none; padding:5px 14px;
+                   border-radius:6px; font-size:0.78rem; cursor:pointer; font-weight:700; }
+#controls button:hover { background:#2c3e5d; }
+#controls span { font-size:0.8rem; color:#3B4F6B; font-weight:700; min-width:50px; text-align:center; }
+#hint { text-align:center; font-size:0.72rem; color:#7a8fa6; margin-bottom:4px; }
+#wrap { overflow:auto; width:100%; height:calc(100vh - 100px);
+        background:#d6dce9; cursor:grab; user-select:none; }
+#wrap:active { cursor:grabbing; }
+#G { transform-origin:top left; display:block; }
+</style>
+</head>
+<body>
+<h1>🏢 MaisonTech App — Diagrama de Flujo Completo</h1>
+<div id="controls">
+  <button onclick="dz(-0.15)">−</button>
+  <span id="zlbl">100%</span>
+  <button onclick="dz(+0.15)">+</button>
+  <button onclick="rz()">⟳ Reset</button>
+</div>
+<p id="hint">Rueda del ratón → zoom &nbsp;·&nbsp; Arrastrar → mover</p>
+<div id="wrap">
+<svg id="G" width="3800" height="2700" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="ar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+    <polygon points="0 0,10 4,0 8" fill="#7a8fa6"/>
+  </marker>
+</defs>
+</svg>
+</div>
+
+<script>
+// ── Globals ─────────────────────────────────────────────────────────────────
+const NS='http://www.w3.org/2000/svg', G=document.getElementById('G');
+const OR='#E8553E', SL='#3B4F6B', LN='#7a8fa6';
+const BW=195, BH=58, DS=54; // default box w/h, diamond half-size
+
+function el(t,a,tx){
+  const e=document.createElementNS(NS,t);
+  for(const[k,v]of Object.entries(a)) e.setAttribute(k,v);
+  if(tx!==undefined) e.textContent=tx;
+  return G.appendChild(e),e;
+}
+
+// ── Shapes ───────────────────────────────────────────────────────────────────
+function box(cx,cy,lines,fill=SL,w=BW,h=BH){
+  el('rect',{x:cx-w/2,y:cy-h/2,width:w,height:h,rx:9,fill});
+  tl(cx,cy,lines,'#fff',12);
+}
+function pill(cx,cy,lbl,w=130,h=42){
+  el('rect',{x:cx-w/2,y:cy-h/2,width:w,height:h,rx:h/2,fill:OR});
+  tl(cx,cy,[lbl],'#fff',14,true);
+}
+function dmd(cx,cy,lines,s=DS){
+  el('polygon',{points:`${cx},${cy-s} ${cx+s*1.18},${cy} ${cx},${cy+s} ${cx-s*1.18},${cy}`,fill:OR});
+  tl(cx,cy,lines,'#fff',11,true);
+}
+function sect(x,y,w,h,lbl){
+  el('rect',{x,y,width:w,height:h,rx:18,fill:SL,'fill-opacity':0.12,stroke:SL,'stroke-width':2,'stroke-opacity':0.25});
+  el('text',{x:x+16,y:y+22,fill:'#1e2d45','font-size':13,'font-weight':'800',
+             'letter-spacing':1,'font-family':"'Segoe UI',system-ui,sans-serif"},lbl);
+}
+function tl(cx,cy,lines,col,sz,bold=false){
+  const lh=sz+4, off=((lines.length-1)*lh)/2;
+  for(let i=0;i<lines.length;i++){
+    el('text',{x:cx,y:cy-off+i*lh,'text-anchor':'middle','dominant-baseline':'middle',
+               fill:col,'font-size':sz,'font-weight':bold?'700':'400',
+               'font-family':"'Segoe UI',system-ui,sans-serif",
+               'pointer-events':'none'},lines[i]);
+  }
+}
+
+// ── Arrows ───────────────────────────────────────────────────────────────────
+function arr(x1,y1,x2,y2,lbl=''){
+  el('line',{x1,y1,x2,y2,stroke:LN,'stroke-width':2,'marker-end':'url(#ar)'});
+  if(lbl) albl((x1+x2)/2,(y1+y2)/2,lbl);
+}
+function elb(x1,y1,x2,y2,lbl='',ey=null){
+  const m=ey??((y1+y2)/2);
+  el('path',{d:`M${x1},${y1}L${x1},${m}L${x2},${m}L${x2},${y2}`,
+             stroke:LN,'stroke-width':2,fill:'none','marker-end':'url(#ar)'});
+  if(lbl) albl((x1+x2)/2,m,lbl);
+}
+function albl(lx,ly,txt){
+  const w=txt.length*6.8+12;
+  el('rect',{x:lx-w/2,y:ly-9,width:w,height:17,rx:4,fill:'#d6dce9'});
+  el('text',{x:lx,y:ly+1,'text-anchor':'middle','dominant-baseline':'middle',
+             fill:'#4a5e7a','font-size':10,'font-weight':'700',
+             'font-family':"'Segoe UI',system-ui,sans-serif"},txt);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  SECTION BACKGROUNDS  (draw first, behind everything)
+// ═════════════════════════════════════════════════════════════════════════════
+sect(  30, 580,  960, 1450, '📱  APP MÓVIL  —  rol: terreno');
+sect(1010, 580, 1730, 1450, '🖥️  PANEL ADMINISTRADOR  —  admin · caja · superadmin');
+sect(2770, 350, 1000,  680, '📷  SCAN PAGE  —  desde QR de máquina');
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  AUTH FLOW
+// ═════════════════════════════════════════════════════════════════════════════
+const AX=1650, LX=1170, FX=850;
+
+pill(AX,70,'INICIO');
+arr(AX,92,AX,132);
+
+// ¿Token válido?
+dmd(AX,172,['¿Token','válido?']);
+// NO → Login (left) │ SÍ ↓
+elb(AX-64,172,LX,172,'NO',172);
+arr(AX,226,AX,264,'SÍ');
+
+// --- Login path ---
+box(LX,172,['Pantalla de Login','usuario + contraseña'],SL,200,52);
+arr(LX,198,LX,238);
+box(LX,264,['¿Olvidaste contraseña?'],SL,200,46);
+elb(LX-100,264,FX,326,'SÍ',264);
+arr(LX,288,LX,326,'NO');
+box(LX,352,['Reintentar login'],SL,200,46);
+
+// --- ForgotPassword ---
+box(FX,352,['ForgotPassword','envía email reset'],SL,182,52);
+arr(FX,378,FX,416);
+box(FX,442,['ResetPassword','?token= en URL','→ nueva contraseña'],SL,182,70);
+
+// --- JWT decode ---
+box(AX,290,['Decodifica JWT','→ detecta rol'],SL,200,52);
+arr(AX,316,AX,354);
+
+// ¿URL /scan/:id?
+dmd(AX,392,['¿URL','/scan/:id?']);
+// SÍ → Scan Page (right)
+elb(AX+64,392,3100,432,'SÍ',392);
+// NO ↓
+arr(AX,446,AX,484,'NO');
+
+// ¿Qué rol?
+dmd(AX,522,['¿Qué','rol?']);
+// terreno → App Móvil (left)
+elb(AX-64,522,450,596,'terreno',522);
+// admin → Panel Admin (right)
+elb(AX+64,522,1880,596,'admin / caja',522);
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  APP MÓVIL
+// ═════════════════════════════════════════════════════════════════════════════
+const HX2=148, MX=450, TX=778;
+
+// Tab labels
+box(HX2,638,['Tab: HISTORIAL'],OR,165,38);
+box(MX, 638,['Tab: RUTA'],     OR,165,38);
+box(TX, 638,['Tab: TAREAS'],   OR,165,38);
+
+// --- HISTORIAL ---
+arr(HX2,657,HX2,694);
+box(HX2,722,['GET mi-historial','completados / cancelados'],SL,168,52);
+arr(HX2,748,HX2,786);
+box(HX2,814,['Cards: fecha · paradas','duración · total Gs.'],SL,168,52);
+
+// --- TAREAS ---
+arr(TX,657,TX,694);
+box(TX,722,['GET mis-tareas','pendientes · activas'],SL,168,52);
+arr(TX,748,TX,788);
+dmd(TX,824,['Status','run?'],44);
+elb(TX-44,824,628,882,'pending',824);
+elb(TX+44,824,892,882,'active', 824);
+box(628,908,['Aceptar recorrido','→ run activo'],SL,168,52);
+box(892,908,['"Ver Tab Ruta"'],SL,148,46);
+
+// --- RUTA ---
+arr(MX,657,MX,696);
+box(MX,724,['Home del run','Empezar / Continuar'],SL,180,52);
+arr(MX,750,MX,790);
+box(MX,816,['StopList','lista de paradas del recorrido'],SL,188,52);
+arr(MX,842,MX,882);
+dmd(MX,916,['Acción','elegida'],50);
+
+// + máquina
+elb(MX-50,916,218,974,'+ máq.',916);
+box(218,1002,['MachineSearch Modal','texto / QR Scan'],SL,180,52);
+arr(218,1028,218,1066);
+box(218,1092,['POST /stops','agrega al run activo'],SL,180,46);
+elb(218,1116,MX,842,'',1124);
+
+// finalizar directo
+elb(MX+50,916,700,974,'finalizar',916);
+box(700,1002,['Cancelar run directo','PATCH /route-runs/:id'],SL,188,52);
+
+// tap parada → StopAction
+arr(MX,966,MX,1004,'parada');
+box(MX,1030,['StopAction','elige qué hacer'],OR,182,52);
+arr(MX,1056,MX,1096);
+dmd(MX,1130,['Acción?'],44);
+
+// RecordForm
+elb(MX-44,1130,275,1194,'Recaudación',1130);
+box(275,1222,['RecordForm','campos dinámicos + fotos','fórmulas en tiempo real'],SL,184,70);
+arr(275,1258,275,1298);
+box(275,1326,['Pre-Calc Modal','vista previa + profit ↑↓'],SL,184,52);
+arr(275,1352,275,1392);
+box(275,1418,['POST /records','+ subir fotos'],OR,184,46);
+
+// MantencionForm
+elb(MX+44,1130,640,1194,'Mantención',1130);
+box(640,1222,['MantencionForm','catálogo · stock · items','descripción + monto Gs.'],SL,184,70);
+arr(640,1258,640,1322);
+box(640,1348,['POST /maintenance'],OR,184,46);
+
+// ¿Todos listos?
+elb(275,1442,MX,1492,'',1468);
+elb(640,1372,MX,1492,'',1468);
+arr(MX,1492,MX,1530);
+dmd(MX,1564,['¿Todos','listos?'],46);
+elb(MX-46,1564,MX,816,'NO',1612);
+arr(MX,1610,MX,1650,'SÍ');
+box(MX,1678,['Finalizar / Cancelar Ruta','PATCH /route-runs/:id'],OR,205,52);
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  PANEL ADMIN
+// ═════════════════════════════════════════════════════════════════════════════
+const ADX=1880;
+dmd(ADX,638,['Sección','elegida'],52);
+// s=52 → bottom=(ADX,690), right=(ADX+61,638)
+
+// Fan-out: 5 main columns
+const COLS=[
+  {x:1090,lines:['Dashboard','KPIs · alertas · log actividad']},
+  {x:1340,lines:['Máquinas','CRUD · lugares · mapa Leaflet']},
+  {x:1610,lines:['Rutas','ver stops · done/failed','quitar · cancelar']},
+  {x:1880,lines:['Clientes','CRUD · fichas','timeline + productos']},
+  {x:2140,lines:['Productos','catálogo · stock','fotos · tipos']},
+];
+for(const c of COLS){
+  elb(ADX,690,c.x,720,'',690);
+  box(c.x,748,c.lines,SL,175,c.lines.length>2?70:66);
+}
+
+// Usuarios (separate branch from right)
+elb(ADX+61,638,2430,700,'usuarios',638);
+box(2430,750,['Usuarios','CRUD · perfiles · recaudadores'],SL,180,52);
+arr(2430,776,2430,820);
+box(2430,848,['Perfil Recaudador','vehículo · stats · runs','→ asignar recorrido'],SL,180,70);
+
+// --- Configuración chain (below Dashboard x=1090) ---
+arr(1090,784,1090,828);
+box(1090,854,['Configuración','solo superadmin'],OR,175,46);
+arr(1090,878,1090,918);
+box(1090,944,['Tipos de máquina','crear · editar · eliminar'],SL,175,52);
+arr(1090,970,1090,1010);
+box(1090,1036,['Campos por tipo','number · text · select','checkbox · constant'],SL,175,70);
+arr(1090,1072,1090,1112);
+box(1090,1138,['Builder de fórmulas','{campo} · {prev:campo}','operadores + − * /'],SL,175,70);
+
+// --- Asignación (below Rutas x=1610) ---
+arr(1610,784,1610,830);
+box(1610,856,['Asignación de Recorrido','seleccionar máquinas'],SL,198,52);
+arr(1610,882,1610,920);
+dmd(1610,954,['¿Con','recaud.?'],44);
+elb(1610-44*1.18,954,1400,1018,'NO',954);
+elb(1610+44*1.18,954,1800,1018,'SÍ',954);
+box(1400,1044,['Run activo','inmediato'],OR,168,46);
+box(1800,1044,['Run pendiente','espera aceptar'],OR,168,46);
+
+// --- Caja (below Productos x=2140) ---
+arr(2140,784,2140,830);
+box(2140,856,['Caja','ingresos · egresos · cierre'],SL,188,52);
+arr(2140,882,2140,920);
+box(2140,946,['Método de pago','efectivo · tarjeta','transferencia · mixto'],SL,188,66);
+arr(2140,980,2140,1018);
+box(2140,1044,['Cierre de Caja','resumen del día'],OR,188,46);
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  SCAN PAGE
+// ═════════════════════════════════════════════════════════════════════════════
+const SX=3100;
+
+dmd(SX,436,['¿Autenti-','cado?'],46);
+// NO right
+elb(SX+46,436,3530,436,'NO',436);
+box(3620,436,['Login Screen','→ redirige a /scan/:id'],SL,192,46);
+// SÍ down
+arr(SX,482,SX,522,'SÍ');
+box(SX,548,['ScanPage','nombre · ID · tipo máquina'],SL,218,52);
+arr(SX,574,SX,614);
+dmd(SX,648,['Acción','elegida'],46);
+
+elb(SX-46,648,2930,714,'Recaudación',648);
+elb(SX+46,648,3360,714,'Mantención',648);
+
+box(2930,742,['localStorage: scan_pending','→ navega a /','→ abre RecordForm'],SL,228,70);
+box(3360,742,['localStorage: scan_pending','→ navega a /','→ abre MantencionForm'],SL,228,70);
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  FIN
+// ═════════════════════════════════════════════════════════════════════════════
+const FINX=1880, FINY=2150;
+pill(FINX,FINY,'FIN');
+
+elb(MX,   1704,FINX,    FINY-22,'',1900);
+elb(700,  1028,FINX-260,FINY-22,'',1900);
+elb(2930, 778, FINX-60, FINY-22,'',1980);
+elb(3360, 778, FINX+100,FINY-22,'',2000);
+elb(1090, 1174,FINX-420,FINY-22,'',1900);
+elb(2140, 1068,FINX,    FINY-22,'',1970);
+elb(2430, 884, FINX+260,FINY-22,'',1900);
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ZOOM & PAN
+// ═════════════════════════════════════════════════════════════════════════════
+let sc=1;
+const wrap=document.getElementById('wrap'),svg=G;
+
+function dz(d){ sc=Math.min(3,Math.max(0.2,sc+d)); apz(); }
+function rz(){ sc=1; apz(); }
+function apz(){
+  svg.style.transform=`scale(${sc})`;
+  document.getElementById('zlbl').textContent=Math.round(sc*100)+'%';
+}
+
+let drag=false,ox=0,oy=0,sl=0,st=0;
+wrap.addEventListener('mousedown',e=>{drag=true;ox=e.pageX-wrap.offsetLeft;oy=e.pageY-wrap.offsetTop;sl=wrap.scrollLeft;st=wrap.scrollTop;});
+wrap.addEventListener('mouseleave',()=>drag=false);
+wrap.addEventListener('mouseup',()=>drag=false);
+wrap.addEventListener('mousemove',e=>{if(!drag)return;e.preventDefault();wrap.scrollLeft=sl-(e.pageX-wrap.offsetLeft-ox);wrap.scrollTop=st-(e.pageY-wrap.offsetTop-oy);});
+wrap.addEventListener('wheel',e=>{e.preventDefault();dz(e.deltaY<0?0.1:-0.1);},{passive:false});
+</script>
+</body>
+</html>
