@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import * as LucideIcons from 'lucide-react';
 import MobileApp from './MobileApp';
+import ScanPage from './ScanPage';
 import { getMachines, getRecords, createRecord, updateMachine, getRouteRuns, updateStop, deleteStop, updateRouteRun, createRouteRun, createMachine, getTipos, getLugares, createLugar, updateLugar, getConfig, updateConfig, createTipo, updateTipo, deleteTipo, createCampo, updateCampo, deleteCampo, reorderCampos, login, getToken, clearToken, getReportePorEvento, getReporteMensual, getReporteAcumulado, getReporteDescuadres, getReporteExportUrl, getCajaMovimientos, getCajaBalance, createCajaMovimiento, deleteCajaMovimiento, reembolsarMovimiento, getCatalogo, createCatalogoItem, updateCatalogoItem, deleteCatalogoItem, uploadCatalogoImagen, getItemTiposCat, createItemTipoCat, updateItemTipoCat, deleteItemTipoCat, getTipomaquinas, getClientes, getClienteFicha, createCliente, updateCliente, deleteCliente, getCajaCierre, createCajaCierre, deleteCajaCierre, getUsuarios, createUsuario, updateUsuario, deleteUsuario, getUsuariosActividad, getVehiculo, saveVehiculo, deleteVehiculo, asignarProductoCliente, updateProductoCliente, removeProductoCliente, forgotPassword, resetPassword, verifyResetToken } from './api';
 import './index.css';
 
@@ -6821,6 +6822,11 @@ function getAuthFromToken() {
 const App = () => {
     // Detectar token de reset en la URL (?reset=TOKEN)
     const [resetToken] = useState(() => new URLSearchParams(window.location.search).get('reset'));
+    // Detectar ruta /scan/:machineId
+    const [scanMachineId] = useState(() => {
+        const m = window.location.pathname.match(/^\/scan\/(.+)$/);
+        return m ? decodeURIComponent(m[1]) : null;
+    });
     const [auth, setAuth] = useState(() => getAuthFromToken());
     const [records, setRecords] = useState([]);
     const [machines, setMachines] = useState([]);
@@ -6855,6 +6861,12 @@ const App = () => {
     // Si hay token de reset en la URL, mostrar pantalla de reset (independiente de auth)
     if (resetToken) {
         return <ResetPasswordScreen token={resetToken} onDone={() => window.location.replace('/')} />;
+    }
+
+    // Ruta /scan/:machineId → mostrar página de escaneo (requiere login)
+    if (scanMachineId) {
+        if (!auth) return <LoginScreen onLogin={() => setAuth(getAuthFromToken())} />;
+        return <ScanPage machineId={scanMachineId} />;
     }
 
     if (!auth) {

@@ -712,7 +712,7 @@ export default function MapView({ machines, onBack, mobile = false, onRunStarted
 
                             {/* QR Code */}
                             <div style={{ background: 'white', borderRadius: 12, padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.12)' }}>
-                                <QRCodeSVG value={qrModal.machineId} size={200} level="H" />
+                                <QRCodeSVG value={`${window.location.origin}/scan/${encodeURIComponent(qrModal.machineId)}`} size={200} level="H" />
                             </div>
 
                             {/* Hint */}
