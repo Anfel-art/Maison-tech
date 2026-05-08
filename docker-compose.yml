@@ -22,6 +22,6 @@ services:
       dockerfile: Dockerfile.web
     restart: unless-stopped
     ports:
-      - "8080:80"          # host:8080 → contenedor:80
+      - "0.0.0.0:8080:80"  # escuchar en todas las interfaces
     depends_on:
       - api
