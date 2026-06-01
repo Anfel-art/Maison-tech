@@ -7,8 +7,8 @@ function parseExtra(raw) {
   try { return JSON.parse(raw || '{}'); } catch { return {}; }
 }
 
-function buildWhere(machineId, from, to) {
-  const c = [], p = [];
+function buildWhere(machineId, from, to, extra = []) {
+  const c = [...extra], p = [];
   if (machineId) { c.push('r.maq_id = ?');                     p.push(machineId); }
   if (from)      { c.push("date(r.rre_timestamp) >= date(?)"); p.push(from); }
   if (to)        { c.push("date(r.rre_timestamp) <= date(?)"); p.push(to); }
@@ -28,18 +28,28 @@ const BASE = `
 `;
 
 // GET /api/reports/por-evento?from=&to=&machineId=
+// Sin filtros aplica ventana de 90 días para evitar traer toda la BD. Máximo 5000 filas.
 router.get('/por-evento', (req, res) => {
   const { machineId, from, to } = req.query;
-  const { where, params } = buildWhere(machineId, from, to);
-  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp DESC').all(...params);
+  const extraConds = [];
+  if (!from && !to && !machineId) {
+    extraConds.push("date(r.rre_timestamp) >= date('now', '-90 days')");
+  }
+  const { where, params } = buildWhere(machineId, from, to, extraConds);
+  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp DESC LIMIT 5000').all(...params);
   res.json(rows.map(r => ({ ...r, camposExtra: parseExtra(r.extra), extra: undefined })));
 });
 
 // GET /api/reports/mensual?from=&to=&machineId=
+// Sin filtros aplica ventana de 90 días para evitar cargar todo el historial.
 router.get('/mensual', (req, res) => {
   const { machineId, from, to } = req.query;
-  const { where, params } = buildWhere(machineId, from, to);
-  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp ASC').all(...params);
+  const extraConds = [];
+  if (!from && !to && !machineId) {
+    extraConds.push("date(r.rre_timestamp) >= date('now', '-90 days')");
+  }
+  const { where, params } = buildWhere(machineId, from, to, extraConds);
+  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp ASC LIMIT 10000').all(...params);
 
   const groups = new Map();
   for (const r of rows) {
@@ -63,10 +73,15 @@ router.get('/mensual', (req, res) => {
 });
 
 // GET /api/reports/acumulado?from=&to=&machineId=
+// Sin filtros aplica ventana de 90 días para evitar cargar todo el historial.
 router.get('/acumulado', (req, res) => {
   const { machineId, from, to } = req.query;
-  const { where, params } = buildWhere(machineId, from, to);
-  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp ASC').all(...params);
+  const extraConds = [];
+  if (!from && !to && !machineId) {
+    extraConds.push("date(r.rre_timestamp) >= date('now', '-90 days')");
+  }
+  const { where, params } = buildWhere(machineId, from, to, extraConds);
+  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp ASC LIMIT 10000').all(...params);
 
   const running = new Map();
   res.json(rows.map(r => {
@@ -81,12 +96,15 @@ router.get('/acumulado', (req, res) => {
 });
 
 // GET /api/reports/descuadres?from=&to=&machineId=
+// Sin filtros de fecha aplica ventana de 90 días para evitar full-table scan. Máximo 2000 filas.
 router.get('/descuadres', (req, res) => {
   const { machineId, from, to } = req.query;
-  const { where, params } = buildWhere(machineId, from, to);
-  const extra = 'ABS(r.rre_mnto_total - r.rre_pre_calc) > 0.01';
-  const finalWhere = where ? where + ' AND ' + extra : ' WHERE ' + extra;
-  const rows = db.prepare(BASE + finalWhere + ' ORDER BY r.rre_timestamp DESC').all(...params);
+  const extraConds = ['ABS(r.rre_mnto_total - r.rre_pre_calc) > 0.01'];
+  if (!from && !to) {
+    extraConds.push("date(r.rre_timestamp) >= date('now', '-90 days')");
+  }
+  const { where, params } = buildWhere(machineId, from, to, extraConds);
+  const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp DESC LIMIT 2000').all(...params);
   res.json(rows.map(r => ({
     ...r,
     diff: (r.mntoTotal || 0) - (r.preCalc || 0),
@@ -96,9 +114,14 @@ router.get('/descuadres', (req, res) => {
 });
 
 // GET /api/reports/export?from=&to=&machineId= — CSV download
+// Sin filtros de fecha aplica los últimos 90 días para evitar exportaciones masivas sin querer
 router.get('/export', (req, res) => {
   const { machineId, from, to } = req.query;
-  const { where, params } = buildWhere(machineId, from, to);
+  const extraConds = [];
+  if (!from && !to) {
+    extraConds.push("date(r.rre_timestamp) >= date('now', '-90 days')");
+  }
+  const { where, params } = buildWhere(machineId, from, to, extraConds);
   const rows = db.prepare(BASE + where + ' ORDER BY r.rre_timestamp DESC').all(...params);
 
   const allKeys = new Set();

@@ -3,22 +3,32 @@ import multer from 'multer';
 import { join, extname, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname    = dirname(fileURLToPath(import.meta.url));
+const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 const storage = multer.diskStorage({
   destination: join(__dirname, '../uploads'),
   filename: (_req, file, cb) => cb(null, `cat_${Date.now()}${extname(file.originalname)}`),
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIME.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Solo se permiten imágenes (jpeg, png, webp, gif)'));
+  },
+});
 
-const router = Router();
-const soloAdmin = requireRole('admin', 'superadmin');
+const router     = Router();
+const soloAdmin  = requireRole('admin', 'superadmin');
+const adminOCaja = requireRole('admin', 'superadmin', 'caja');
 
 // ─── TIPOS DE ÍTEM ─────────────────────────────────────────────────────────────
 
 // GET /api/catalogo/tipos
-router.get('/tipos', (req, res) => {
+router.get('/tipos', requireAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM item_tipo_cat ORDER BY itc_nombre COLLATE NOCASE').all());
 });
 
@@ -59,14 +69,14 @@ router.delete('/tipos/:id', soloAdmin, (req, res) => {
 });
 
 // GET /api/catalogo/tipomaquinas
-router.get('/tipomaquinas', (req, res) => {
+router.get('/tipomaquinas', requireAuth, (req, res) => {
   res.json(db.prepare('SELECT tmq_id, tmq_desc FROM tipomaquina ORDER BY tmq_desc COLLATE NOCASE').all());
 });
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
 
 // GET /api/catalogo?catId=&todos=1
-router.get('/', (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   const { catId, todos } = req.query;
   let sql = `
     SELECT ci.*, tc.itc_nombre AS tipo_cat_nombre, tm.tmq_desc AS tipo_maq_nombre
@@ -84,16 +94,21 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/catalogo
-router.post('/', (req, res) => {
-  const { nombre, precio, descrip, stock, item_cat_id, item_tmq_id } = req.body;
+router.post('/', soloAdmin, (req, res) => {
+  const { nombre, precio, descrip, stock, item_cat_id, item_tmq_id, item_tipo } = req.body;
   if (!nombre?.trim() || precio == null)
     return res.status(400).json({ error: 'nombre y precio son requeridos' });
+  if (nombre.trim().length > 200)
+    return res.status(400).json({ error: 'nombre no puede superar 200 caracteres' });
+  if (descrip && descrip.trim().length > 1000)
+    return res.status(400).json({ error: 'descrip no puede superar 1000 caracteres' });
   if (isNaN(precio) || Number(precio) < 0)
     return res.status(400).json({ error: 'precio debe ser un número no negativo' });
+  const tipoFinal = item_tipo === 'servicio' ? 'servicio' : 'producto';
   const result = db.prepare(
     'INSERT INTO catalogo_item (item_nombre, item_tipo, item_precio, item_descrip, item_stock, item_cat_id, item_tmq_id) VALUES (?,?,?,?,?,?,?)'
   ).run(
-    nombre.trim(), 'producto', Number(precio),
+    nombre.trim(), tipoFinal, Number(precio),
     descrip?.trim() || null,
     stock != null ? Number(stock) : 0,
     item_cat_id || null,
@@ -103,9 +118,13 @@ router.post('/', (req, res) => {
 });
 
 // PATCH /api/catalogo/:id
-router.patch('/:id', (req, res) => {
+router.patch('/:id', soloAdmin, (req, res) => {
   const item = db.prepare('SELECT * FROM catalogo_item WHERE item_id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'Ítem no encontrado' });
+  if (req.body.nombre !== undefined && req.body.nombre.trim().length > 200)
+    return res.status(400).json({ error: 'nombre no puede superar 200 caracteres' });
+  if (req.body.descrip !== undefined && req.body.descrip && req.body.descrip.trim().length > 1000)
+    return res.status(400).json({ error: 'descrip no puede superar 1000 caracteres' });
   const nombre      = req.body.nombre      !== undefined ? req.body.nombre.trim()          : item.item_nombre;
   const precio      = req.body.precio      !== undefined ? Number(req.body.precio)          : item.item_precio;
   const descrip     = req.body.descrip     !== undefined ? req.body.descrip?.trim() || null : item.item_descrip;
@@ -121,7 +140,7 @@ router.patch('/:id', (req, res) => {
 });
 
 // POST /api/catalogo/:id/imagen
-router.post('/:id/imagen', upload.single('foto'), (req, res) => {
+router.post('/:id/imagen', soloAdmin, upload.single('foto'), (req, res) => {
   const item = db.prepare('SELECT 1 FROM catalogo_item WHERE item_id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'Ítem no encontrado' });
   if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
@@ -131,7 +150,7 @@ router.post('/:id/imagen', upload.single('foto'), (req, res) => {
 });
 
 // DELETE /api/catalogo/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', soloAdmin, (req, res) => {
   const item = db.prepare('SELECT 1 FROM catalogo_item WHERE item_id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'Ítem no encontrado' });
   db.prepare('DELETE FROM catalogo_item WHERE item_id = ?').run(req.params.id);

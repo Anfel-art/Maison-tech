@@ -1,9 +1,27 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { requireRole } from '../middleware/auth.js';
+import { clientesWriteLimiter } from '../middleware/writeLimiter.js';
+import { audit } from '../middleware/audit.js';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validarCoords(lat, lng) {
+  if (lat !== undefined && lat !== null && lat !== '') {
+    const n = Number(lat);
+    if (!isFinite(n) || n < -90 || n > 90) return 'Latitud inválida (debe estar entre -90 y 90)';
+  }
+  if (lng !== undefined && lng !== null && lng !== '') {
+    const n = Number(lng);
+    if (!isFinite(n) || n < -180 || n > 180) return 'Longitud inválida (debe estar entre -180 y 180)';
+  }
+  return null;
+}
 
 const router = Router();
-const soloAdmin = requireRole('admin', 'superadmin');
+const soloAdmin    = requireRole('admin', 'superadmin');
+// Caja también puede consultar clientes (para ventas/búsquedas)
+const adminYCaja   = requireRole('admin', 'superadmin', 'caja');
 
 function fmt(row) {
   return {
@@ -23,10 +41,14 @@ function fmt(row) {
   };
 }
 
-// GET /api/clientes?buscar=&tipo=&activo=
-router.get('/', (req, res) => {
+// GET /api/clientes?buscar=&tipo=&activo=&page=1&limit=50
+// Admin, superadmin y caja pueden listar clientes; terreno no.
+router.get('/', adminYCaja, (req, res) => {
   const { buscar, tipo, activo } = req.query;
-  let sql = 'SELECT * FROM cliente';
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+  const offset = (page - 1) * limit;
+
   const params = [];
   const conds  = [];
   if (buscar) {
@@ -40,13 +62,23 @@ router.get('/', (req, res) => {
   if (activo !== undefined) {
     conds.push('cli_activo = ?'); params.push(activo === '0' ? 0 : 1);
   }
-  if (conds.length) sql += ' WHERE ' + conds.join(' AND ');
-  sql += ' ORDER BY cli_nombre ASC';
-  res.json(db.prepare(sql).all(...params).map(fmt));
+  const where = conds.length ? ' WHERE ' + conds.join(' AND ') : '';
+
+  const { total } = db.prepare(`SELECT COUNT(*) as total FROM cliente${where}`).get(...params);
+  const rows = db.prepare(`SELECT * FROM cliente${where} ORDER BY cli_nombre ASC LIMIT ? OFFSET ?`)
+    .all(...params, limit, offset);
+
+  res.json({
+    data:       rows.map(fmt),
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  });
 });
 
 // GET /api/clientes/:id/ficha — datos completos: productos asignados + historial de máquinas
-router.get('/:id/ficha', (req, res) => {
+router.get('/:id/ficha', adminYCaja, (req, res) => {
   const row = db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Cliente no encontrado' });
 
@@ -181,22 +213,27 @@ router.delete('/:id/productos/:itemId', soloAdmin, (req, res) => {
 });
 
 // GET /api/clientes/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', adminYCaja, (req, res) => {
   const row = db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Cliente no encontrado' });
   res.json(fmt(row));
 });
 
 // POST /api/clientes
-router.post('/', soloAdmin, (req, res) => {
+router.post('/', soloAdmin, clientesWriteLimiter, (req, res) => {
   const { nombre, tipo = 'persona', rucCi, email, telefono, direccion, contacto, notas, lat, lng } = req.body;
   if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es requerido' });
   if (!['persona','empresa'].includes(tipo)) return res.status(400).json({ error: 'tipo inválido' });
+  if (email && !EMAIL_RE.test(String(email).trim())) return res.status(400).json({ error: 'Formato de email inválido' });
+  const coordErrPost = validarCoords(lat, lng);
+  if (coordErrPost) return res.status(400).json({ error: coordErrPost });
   const result = db.prepare(`
     INSERT INTO cliente (cli_nombre, cli_tipo, cli_ruc_ci, cli_email, cli_telefono, cli_direccion, cli_contacto, cli_notas, cli_lat, cli_lng)
     VALUES (?,?,?,?,?,?,?,?,?,?)
   `).run(nombre.trim(), tipo, rucCi||null, email||null, telefono||null, direccion||null, contacto||null, notas||null, lat??null, lng??null);
-  res.status(201).json(fmt(db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(result.lastInsertRowid)));
+  const newCli = fmt(db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(result.lastInsertRowid));
+  audit(req, 'cliente.create', 'cliente', newCli.id, { nombre: newCli.nombre });
+  res.status(201).json(newCli);
 });
 
 // PATCH /api/clientes/:id
@@ -204,6 +241,10 @@ router.patch('/:id', soloAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
   const { nombre, tipo, rucCi, email, telefono, direccion, contacto, notas, activo, lat, lng } = req.body;
+  if (email && !EMAIL_RE.test(String(email).trim())) return res.status(400).json({ error: 'Formato de email inválido' });
+  if (tipo !== undefined && !['persona','empresa'].includes(tipo)) return res.status(400).json({ error: 'tipo inválido' });
+  const coordErrPatch = validarCoords(lat, lng);
+  if (coordErrPatch) return res.status(400).json({ error: coordErrPatch });
   db.prepare(`
     UPDATE cliente SET
       cli_nombre    = COALESCE(?, cli_nombre),
@@ -232,14 +273,26 @@ router.patch('/:id', soloAdmin, (req, res) => {
     lng       !== undefined ? (lng       ?? null) : existing.cli_lng,
     req.params.id
   );
-  res.json(fmt(db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(req.params.id)));
+  const updated = fmt(db.prepare('SELECT * FROM cliente WHERE cli_id = ?').get(req.params.id));
+  audit(req, 'cliente.update', 'cliente', updated.id, { nombre: updated.nombre });
+  res.json(updated);
 });
 
 // DELETE /api/clientes/:id
 router.delete('/:id', soloAdmin, (req, res) => {
-  const row = db.prepare('SELECT cli_id FROM cliente WHERE cli_id = ?').get(req.params.id);
+  const row = db.prepare('SELECT cli_id, cli_nombre FROM cliente WHERE cli_id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Cliente no encontrado' });
-  db.prepare('DELETE FROM cliente WHERE cli_id = ?').run(req.params.id);
+  db.transaction(() => {
+    // Elimina productos asignados al cliente
+    db.prepare('DELETE FROM cliente_producto WHERE cli_id = ?').run(req.params.id);
+    // Desvincula movimientos de caja (mantiene el historial pero sin referencia al cliente eliminado)
+    db.prepare('UPDATE caja_movimiento SET cli_id = NULL WHERE cli_id = ?').run(req.params.id);
+    // Desvincula máquinas del cliente
+    db.prepare('UPDATE maquina SET cli_id = NULL WHERE cli_id = ?').run(req.params.id);
+    // Elimina el cliente
+    db.prepare('DELETE FROM cliente WHERE cli_id = ?').run(req.params.id);
+  })();
+  audit(req, 'cliente.delete', 'cliente', req.params.id, { nombre: row.cli_nombre });
   res.json({ ok: true });
 });
 

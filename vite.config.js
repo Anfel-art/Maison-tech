@@ -4,11 +4,28 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   server: {
+    host: true,   // escucha en 0.0.0.0 → accesible desde el celular en la misma red WiFi
     proxy: {
       '/api': 'http://localhost:3001',
       '/uploads': 'http://localhost:3001',
     },
   },
+
+  build: {
+    rollupOptions: {
+      output: {
+        // Divide el bundle en chunks cacheables por separado.
+        // El navegador puede descargar varios en paralelo y reusar los que no cambiaron.
+        manualChunks: {
+          'vendor-react':  ['react', 'react-dom'],
+          'vendor-leaflet': ['leaflet'],
+          'vendor-lucide': ['lucide-react'],
+          'vendor-qr':     ['qrcode.react'],
+        },
+      },
+    },
+  },
+
   plugins: [
     react(),
     VitePWA({

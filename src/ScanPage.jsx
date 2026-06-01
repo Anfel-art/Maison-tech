@@ -18,7 +18,7 @@ export default function ScanPage({ machineId }) {
     function handleAction(action) {
         // Guardar acción pendiente para que MobileApp la retome
         localStorage.setItem('scan_pending', JSON.stringify({ machineId, action }));
-        window.location.href = '/';
+        window.location.replace('/');
     }
 
     /* ── Loading ── */
@@ -36,7 +36,7 @@ export default function ScanPage({ machineId }) {
             <p style={{ fontWeight: 700, fontSize: '1.1rem', color: '#1e1e2e', margin: 0 }}>Máquina no encontrada</p>
             <p style={{ color: '#9ca3af', fontSize: '0.85rem', margin: 0 }}>El código QR no corresponde a ninguna máquina registrada.</p>
             <button
-                onClick={() => window.location.href = '/'}
+                onClick={() => window.location.replace('/')}
                 style={{ marginTop: 8, padding: '0.65rem 1.6rem', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}
             >
                 Ir al inicio

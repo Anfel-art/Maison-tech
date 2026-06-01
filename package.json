@@ -9,7 +9,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "server:dev": "nodemon server/index.js"
+    "server:dev": "nodemon server/index.js",
+    "start": "pm2 start ecosystem.config.cjs",
+    "stop": "pm2 stop seprisa-api",
+    "restart": "pm2 restart seprisa-api",
+    "logs": "pm2 logs seprisa-api"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",
@@ -18,9 +22,12 @@
     "@capacitor/core": "^8.2.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
+    "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.1.0",
     "html5-qrcode": "^2.3.8",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",

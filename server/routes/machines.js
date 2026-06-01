@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import db from '../db.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
+
+// Solo admin y superadmin pueden crear/modificar/eliminar máquinas y lugares
+const soloAdmin = requireRole('admin', 'superadmin');
 
 const SELECT_MACHINE = `
   SELECT m.maq_id, m.maq_status, m.maq_fechacre, m.cli_id,
@@ -24,7 +27,7 @@ function formatMachine(m) {
     id: m.maq_id,
     tmqId: m.tmq_id_val ?? null,
     type: m.type ?? '',
-    typeFields: JSON.parse(m.type_fields || '[]'),
+    typeFields: (() => { try { return JSON.parse(m.type_fields || '[]'); } catch { return []; } })(),
     lgrId: m.lgr_id_val ?? null,
     location: m.location ?? '',
     direccion: m.lgr_direccion ?? '',
@@ -51,27 +54,38 @@ function getCampos(tmqId) {
     readonly:            c.readonly            === 1,
     esPrecalc:           c.esPrecalc           === 1,
     usaUltimoRegistro:   c.usaUltimoRegistro   === 1,
-    opciones:            c.opciones ? JSON.parse(c.opciones) : [],
+    opciones:            (() => { try { return c.opciones ? JSON.parse(c.opciones) : []; } catch { return []; } })(),
   }));
 }
 
 // GET /api/machines
-router.get('/', (_req, res) => {
+router.get('/', requireAuth, (_req, res) => {
   const machines = db.prepare(SELECT_MACHINE + ' ORDER BY m.maq_id').all();
   res.json(machines.map(formatMachine));
 });
 
 // GET /api/machines/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', requireAuth, (req, res) => {
   const m = db.prepare(SELECT_MACHINE + ' WHERE m.maq_id = ?').get(req.params.id);
   if (!m) return res.status(404).json({ error: 'Máquina no encontrada' });
   res.json(formatMachine(m));
 });
 
+const MAQUINA_STATUS = ['ok', 'mantenimiento', 'fuera_servicio', 'baja', 'warning', 'inactiva'];
+const MACHINE_ID_RE  = /^[a-zA-Z0-9_.\-]{1,50}$/;
+
 // POST /api/machines — body: { id, tmqId, lgrId, proId?, status? }
-router.post('/', (req, res) => {
+router.post('/', soloAdmin, (req, res) => {
   const { id, tmqId, lgrId, proId, status } = req.body;
   if (!id || !tmqId || !lgrId) return res.status(400).json({ error: 'id, tmqId y lgrId son requeridos' });
+  if (!MACHINE_ID_RE.test(String(id)))
+    return res.status(400).json({ error: 'El ID de máquina debe tener 1-50 caracteres alfanuméricos' });
+  if (!Number.isInteger(Number(tmqId)) || Number(tmqId) <= 0)
+    return res.status(400).json({ error: 'tmqId debe ser un entero positivo' });
+  if (!Number.isInteger(Number(lgrId)) || Number(lgrId) <= 0)
+    return res.status(400).json({ error: 'lgrId debe ser un entero positivo' });
+  if (status !== undefined && !MAQUINA_STATUS.includes(status))
+    return res.status(400).json({ error: `status debe ser uno de: ${MAQUINA_STATUS.join(', ')}` });
 
   db.prepare('INSERT INTO maquina (maq_id, tmq_id, lgr_id, pro_id, maq_status) VALUES (?,?,?,?,?)')
     .run(id, tmqId, lgrId, proId ?? null, status ?? 'ok');
@@ -81,7 +95,7 @@ router.post('/', (req, res) => {
 });
 
 // PATCH /api/machines/:id
-router.patch('/:id', (req, res) => {
+router.patch('/:id', soloAdmin, (req, res) => {
   const { tmqId, lgrId, proId, status, newId, cliId } = req.body;
   const currentId = req.params.id;
 
@@ -90,7 +104,6 @@ router.patch('/:id', (req, res) => {
 
   const trimmedNewId = newId ? newId.trim() : null;
   if (trimmedNewId && trimmedNewId !== currentId) {
-    if (!trimmedNewId) return res.status(400).json({ error: 'El ID no puede estar vacío' });
     if (db.prepare('SELECT 1 FROM maquina WHERE maq_id = ?').get(trimmedNewId))
       return res.status(400).json({ error: 'Ya existe una máquina con ese ID' });
   }
@@ -124,9 +137,10 @@ router.patch('/:id', (req, res) => {
     }
 
     if (finalId !== currentId) {
-      db.prepare('UPDATE rec_registro SET maq_id = ? WHERE maq_id = ?').run(finalId, currentId);
-      db.prepare('UPDATE maq_gastos   SET maq_id = ? WHERE maq_id = ?').run(finalId, currentId);
-      db.prepare('UPDATE maquina      SET maq_id = ? WHERE maq_id = ?').run(finalId, currentId);
+      db.prepare('UPDATE rec_registro    SET maq_id     = ? WHERE maq_id     = ?').run(finalId, currentId);
+      db.prepare('UPDATE maq_gastos      SET maq_id     = ? WHERE maq_id     = ?').run(finalId, currentId);
+      db.prepare('UPDATE route_run_stops SET machine_id = ? WHERE machine_id = ?').run(finalId, currentId);
+      db.prepare('UPDATE maquina         SET maq_id     = ? WHERE maq_id     = ?').run(finalId, currentId);
     }
   })();
 
@@ -135,7 +149,7 @@ router.patch('/:id', (req, res) => {
 });
 
 // DELETE /api/machines/:id — cascade-deletes dependent rows
-router.delete('/:id', (req, res) => {
+router.delete('/:id', soloAdmin, (req, res) => {
   const id = req.params.id;
   const exists = db.prepare('SELECT 1 FROM maquina WHERE maq_id = ?').get(id);
   if (!exists) return res.status(404).json({ error: 'Máquina no encontrada' });
@@ -154,9 +168,9 @@ router.delete('/:id', (req, res) => {
 // ─── Lookup tables ────────────────────────────────────────────────────────────
 
 // GET /api/machines/meta/tipos
-router.get('/meta/tipos', (_req, res) => {
+router.get('/meta/tipos', requireAuth, (_req, res) => {
   const tipos = db.prepare('SELECT tmq_id as id, tmq_desc as desc, tmq_fields as fields FROM tipomaquina ORDER BY tmq_id').all();
-  res.json(tipos.map(t => ({ ...t, fields: JSON.parse(t.fields || '[]'), campos: getCampos(t.id) })));
+  res.json(tipos.map(t => ({ ...t, fields: (() => { try { return JSON.parse(t.fields || '[]'); } catch { return []; } })(), campos: getCampos(t.id) })));
 });
 
 // POST /api/machines/meta/tipos — superadmin only
@@ -173,7 +187,7 @@ router.patch('/meta/tipos/:id', requireRole('superadmin'), (req, res) => {
   if (desc !== undefined) db.prepare('UPDATE tipomaquina SET tmq_desc = ? WHERE tmq_id = ?').run(desc, req.params.id);
   const t = db.prepare('SELECT tmq_id as id, tmq_desc as desc, tmq_fields as fields FROM tipomaquina WHERE tmq_id = ?').get(req.params.id);
   if (!t) return res.status(404).json({ error: 'No encontrado' });
-  res.json({ id: t.id, desc: t.desc, fields: JSON.parse(t.fields || '[]'), campos: getCampos(t.id) });
+  res.json({ id: t.id, desc: t.desc, fields: (() => { try { return JSON.parse(t.fields || '[]'); } catch { return []; } })(), campos: getCampos(t.id) });
 });
 
 // DELETE /api/machines/meta/tipos/:id — superadmin only
@@ -247,30 +261,64 @@ router.delete('/meta/tipos/:id/campos/:campoId', requireRole('superadmin'), (req
 });
 
 // GET /api/machines/meta/lugares
-router.get('/meta/lugares', (_req, res) => {
+router.get('/meta/lugares', requireAuth, (_req, res) => {
   res.json(db.prepare('SELECT lgr_id as id, lgr_nombre as nombre, lgr_direccion as direccion, lgr_lat as lat, lgr_lng as lng FROM lugar ORDER BY lgr_nombre').all());
 });
 
+/** Valida coordenadas. Retorna un mensaje de error o null si son válidas. */
+function validarCoords(lat, lng) {
+  if (lat !== undefined && lat !== null) {
+    const n = Number(lat);
+    if (!isFinite(n) || n < -90 || n > 90) return 'Latitud inválida (debe estar entre -90 y 90)';
+  }
+  if (lng !== undefined && lng !== null) {
+    const n = Number(lng);
+    if (!isFinite(n) || n < -180 || n > 180) return 'Longitud inválida (debe estar entre -180 y 180)';
+  }
+  return null;
+}
+
 // POST /api/machines/meta/lugares
-router.post('/meta/lugares', (req, res) => {
+router.post('/meta/lugares', soloAdmin, (req, res) => {
   const { nombre, direccion, lat, lng } = req.body;
   if (!nombre) return res.status(400).json({ error: 'nombre requerido' });
+  const coordErr = validarCoords(lat, lng);
+  if (coordErr) return res.status(400).json({ error: coordErr });
   const result = db.prepare('INSERT INTO lugar (lgr_nombre, lgr_direccion, lgr_lat, lgr_lng) VALUES (?,?,?,?)').run(nombre, direccion ?? null, lat ?? null, lng ?? null);
   res.status(201).json({ id: result.lastInsertRowid, nombre, direccion, lat, lng });
 });
 
+// DELETE /api/machines/meta/lugares/:id
+router.delete('/meta/lugares/:id', soloAdmin, (req, res) => {
+  const existing = db.prepare('SELECT lgr_id FROM lugar WHERE lgr_id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Lugar no encontrado' });
+  // Impedir borrado si hay máquinas asignadas al lugar
+  const inUse = db.prepare('SELECT 1 FROM maquina WHERE lgr_id = ? LIMIT 1').get(req.params.id);
+  if (inUse) return res.status(409).json({ error: 'No se puede eliminar: hay máquinas asignadas a este lugar' });
+  db.prepare('DELETE FROM lugar WHERE lgr_id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // PATCH /api/machines/meta/lugares/:id
-router.patch('/meta/lugares/:id', (req, res) => {
+router.patch('/meta/lugares/:id', soloAdmin, (req, res) => {
   const { nombre, direccion, lat, lng } = req.body;
   const existing = db.prepare('SELECT lgr_id as id, lgr_nombre as nombre, lgr_direccion as direccion, lgr_lat as lat, lgr_lng as lng FROM lugar WHERE lgr_id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Lugar no encontrado' });
+  const coordErr = validarCoords(lat, lng);
+  if (coordErr) return res.status(400).json({ error: coordErr });
   db.prepare(`UPDATE lugar SET
     lgr_nombre     = COALESCE(?, lgr_nombre),
     lgr_direccion  = ?,
     lgr_lat        = ?,
     lgr_lng        = ?
     WHERE lgr_id = ?
-  `).run(nombre ?? null, direccion ?? existing.direccion, lat ?? null, lng ?? null, req.params.id);
+  `).run(
+    nombre ?? null,
+    direccion !== undefined ? (direccion ?? null) : existing.direccion,
+    lat       !== undefined ? (lat       ?? null) : existing.lat,
+    lng       !== undefined ? (lng       ?? null) : existing.lng,
+    req.params.id
+  );
   const updated = db.prepare('SELECT lgr_id as id, lgr_nombre as nombre, lgr_direccion as direccion, lgr_lat as lat, lgr_lng as lng FROM lugar WHERE lgr_id = ?').get(req.params.id);
   res.json(updated);
 });

@@ -1,7 +1,13 @@
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+
+/** Genera una contraseña aleatoria segura de ~12 caracteres */
+function randomPass() {
+  return crypto.randomBytes(9).toString('base64url'); // ~12 chars, URL-safe
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const db = new Database(join(__dirname, 'seprisa.db'));
@@ -207,9 +213,17 @@ if (!tmqCols.includes('tmq_fields')) {
 
 // superadmin: usuario con acceso a configuración del negocio
 if (!db.prepare("SELECT 1 FROM usuario WHERE usu_user = 'superadmin'").get()) {
+  const _p = randomPass();
   db.prepare('INSERT INTO usuario (usu_nombre, usu_user, usu_pass, usu_rol) VALUES (?,?,?,?)').run(
-    'Super Admin', 'superadmin', bcrypt.hashSync('superadmin', 10), 'superadmin'
+    'Super Admin', 'superadmin', bcrypt.hashSync(_p, 10), 'superadmin'
   );
+  console.log('\n╔══════════════════════════════════════════════════╗');
+  console.log('║  🔑  CONTRASEÑA INICIAL GENERADA                ║');
+  console.log('╠══════════════════════════════════════════════════╣');
+  console.log(`║  Usuario:     superadmin                         ║`);
+  console.log(`║  Contraseña:  ${_p.padEnd(34)}║`);
+  console.log('║  ⚠  Cambiala inmediatamente desde el Panel Admin ║');
+  console.log('╚══════════════════════════════════════════════════╝\n');
 }
 
 // rre_campos_extra: JSON blob con todos los valores de campos dinámicos
@@ -292,16 +306,32 @@ db.exec(`CREATE TABLE IF NOT EXISTS caja_movimiento (
 // ─── Seed usuarios base (solo si no existen) ─────────────────────────────────
 const usuCount = db.prepare("SELECT COUNT(*) as n FROM usuario WHERE usu_user IN ('admin','terreno')").get().n;
 if (usuCount === 0) {
+  const _pAdmin  = randomPass();
+  const _pTerr   = randomPass();
   const insUsu = db.prepare('INSERT INTO usuario (usu_nombre, usu_user, usu_pass, usu_rol) VALUES (?,?,?,?)');
-  insUsu.run('Admin Central', 'admin',   bcrypt.hashSync('admin',   10), 'admin');
-  insUsu.run('Recaudador',    'terreno', bcrypt.hashSync('terreno', 10), 'terreno');
+  insUsu.run('Admin Central', 'admin',   bcrypt.hashSync(_pAdmin, 10), 'admin');
+  insUsu.run('Recaudador',    'terreno', bcrypt.hashSync(_pTerr,  10), 'terreno');
+  console.log('\n╔══════════════════════════════════════════════════╗');
+  console.log('║  🔑  CONTRASEÑAS INICIALES GENERADAS            ║');
+  console.log('╠══════════════════════════════════════════════════╣');
+  console.log(`║  admin    →  ${_pAdmin.padEnd(36)}║`);
+  console.log(`║  terreno  →  ${_pTerr.padEnd(36)}║`);
+  console.log('║  ⚠  Cambialas desde el Panel Admin              ║');
+  console.log('╚══════════════════════════════════════════════════╝\n');
 }
 
 // ─── Seed usuario cajero (solo si no existe) ──────────────────────────────────
 if (!db.prepare("SELECT 1 FROM usuario WHERE usu_user = 'cajero'").get()) {
+  const _pCaj = randomPass();
   db.prepare('INSERT INTO usuario (usu_nombre, usu_user, usu_pass, usu_rol) VALUES (?,?,?,?)').run(
-    'Cajero', 'cajero', bcrypt.hashSync('cajero', 10), 'caja'
+    'Cajero', 'cajero', bcrypt.hashSync(_pCaj, 10), 'caja'
   );
+  console.log('\n╔══════════════════════════════════════════════════╗');
+  console.log('║  🔑  CONTRASEÑA INICIAL GENERADA                ║');
+  console.log('╠══════════════════════════════════════════════════╣');
+  console.log(`║  cajero  →  ${_pCaj.padEnd(37)}║`);
+  console.log('║  ⚠  Cambiala desde el Panel Admin               ║');
+  console.log('╚══════════════════════════════════════════════════╝\n');
 }
 
 // ─── Limpieza total del sistema (migración única) ─────────────────────────────
@@ -321,11 +351,7 @@ if (!db.prepare("SELECT 1 FROM app_config WHERE cfg_key = 'schema_clean_v1'").ge
   console.log('[db] Sistema limpiado — listo para configuración inicial por superadmin.');
 }
 
-// Migration: contraseña en texto plano para vista de admin
-(() => {
-  const cols = db.prepare("PRAGMA table_info(usuario)").all().map(c => c.name);
-  if (!cols.includes('usu_pass_plain')) db.exec("ALTER TABLE usuario ADD COLUMN usu_pass_plain TEXT");
-})();
+// SEGURIDAD: usu_pass_plain eliminada — no se almacenan contraseñas en texto plano
 
 // Migration: recaudador asignado en route_runs
 (() => {
@@ -453,6 +479,141 @@ db.exec(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
   if (!cols.includes('vei_color'))   db.exec("ALTER TABLE vehiculo ADD COLUMN vei_color TEXT");
   if (!cols.includes('vei_chapa'))   db.exec("ALTER TABLE vehiculo ADD COLUMN vei_chapa TEXT");
   if (!cols.includes('vei_marca'))   db.exec("ALTER TABLE vehiculo ADD COLUMN vei_marca TEXT");
+})();
+
+// ─── Índices para performance ────────────────────────────────────────────────
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_rec_maq_ts    ON rec_registro(maq_id, rre_timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_rec_ts        ON rec_registro(rre_timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_rec_run       ON rec_registro(route_run_id);
+  CREATE INDEX IF NOT EXISTS idx_runs_status   ON route_runs(status, started_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_runs_usu      ON route_runs(usu_id, status);
+  CREATE INDEX IF NOT EXISTS idx_stops_run     ON route_run_stops(route_run_id);
+  CREATE INDEX IF NOT EXISTS idx_caja_ts       ON caja_movimiento(mov_timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_caja_cli      ON caja_movimiento(cli_id);
+  CREATE INDEX IF NOT EXISTS idx_reset_token   ON password_reset_tokens(token);
+  CREATE INDEX IF NOT EXISTS idx_reset_usu     ON password_reset_tokens(usu_id);
+`);
+
+// ─── Log de auditoría ────────────────────────────────────────────────────────
+db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp  TEXT    NOT NULL DEFAULT (datetime('now')),
+  usu_id     INTEGER,
+  usu_user   TEXT,
+  accion     TEXT    NOT NULL,
+  entidad    TEXT,
+  entidad_id TEXT,
+  detalle    TEXT,
+  ip         TEXT
+)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_ts  ON audit_log(timestamp DESC)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_usu ON audit_log(usu_id)`);
+
+// ─── Solicitudes de reposición de stock ──────────────────────────────────────
+db.exec(`CREATE TABLE IF NOT EXISTS solicitud_reposicion (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id      INTEGER REFERENCES catalogo_item(item_id) ON DELETE SET NULL,
+  item_nombre  TEXT    NOT NULL,
+  usu_id       INTEGER REFERENCES usuario(usu_id) ON DELETE SET NULL,
+  usu_nombre   TEXT    NOT NULL,
+  mensaje      TEXT,
+  leida        INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_solicitud_leida ON solicitud_reposicion(leida, created_at DESC)`);
+
+// ─── Migración: apertura y recuento de caja ──────────────────────────────────
+(() => {
+  const cols = db.prepare("PRAGMA table_info(caja_cierre)").all().map(c => c.name);
+  if (!cols.includes('cierre_status'))           db.exec("ALTER TABLE caja_cierre ADD COLUMN cierre_status TEXT NOT NULL DEFAULT 'cerrada'");
+  if (!cols.includes('apertura_efectivo'))        db.exec("ALTER TABLE caja_cierre ADD COLUMN apertura_efectivo REAL DEFAULT 0");
+  if (!cols.includes('apertura_notas'))           db.exec("ALTER TABLE caja_cierre ADD COLUMN apertura_notas TEXT");
+  if (!cols.includes('apertura_timestamp'))       db.exec("ALTER TABLE caja_cierre ADD COLUMN apertura_timestamp TEXT");
+  if (!cols.includes('apertura_usu_id'))          db.exec("ALTER TABLE caja_cierre ADD COLUMN apertura_usu_id INTEGER REFERENCES usuario(usu_id)");
+  if (!cols.includes('apertura_usu_nombre'))      db.exec("ALTER TABLE caja_cierre ADD COLUMN apertura_usu_nombre TEXT");
+  if (!cols.includes('recuento_efectivo'))        db.exec("ALTER TABLE caja_cierre ADD COLUMN recuento_efectivo REAL DEFAULT 0");
+  if (!cols.includes('esp_efectivo'))             db.exec("ALTER TABLE caja_cierre ADD COLUMN esp_efectivo REAL DEFAULT 0");
+  if (!cols.includes('diferencia_efectivo'))      db.exec("ALTER TABLE caja_cierre ADD COLUMN diferencia_efectivo REAL DEFAULT 0");
+})();
+
+// ─── Migración: caja_cierre — UNIQUE por (fecha, usuario) ────────────────────
+// Permite que cada usuario tenga su propia sesión de caja por día.
+// La constraint original era UNIQUE(cierre_fecha) (solo una caja global por día).
+// La nueva constraint es UNIQUE(cierre_fecha, apertura_usu_id).
+(() => {
+  const tblSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='caja_cierre'").get()?.sql ?? '';
+  if (/cierre_fecha\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(tblSql)) {
+    console.log('[db] Migrando caja_cierre → sesiones por usuario...');
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE caja_cierre_v2 (
+          cierre_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          cierre_fecha        TEXT NOT NULL,
+          cierre_timestamp    TEXT DEFAULT (datetime('now')),
+          cierre_ingresos     REAL DEFAULT 0,
+          cierre_egresos      REAL DEFAULT 0,
+          cierre_reembolsos   REAL DEFAULT 0,
+          cierre_balance      REAL DEFAULT 0,
+          cierre_mov_count    INTEGER DEFAULT 0,
+          cierre_notas        TEXT,
+          usu_id              INTEGER REFERENCES usuario(usu_id),
+          usu_nombre          TEXT,
+          cierre_status       TEXT NOT NULL DEFAULT 'cerrada',
+          apertura_efectivo   REAL DEFAULT 0,
+          apertura_notas      TEXT,
+          apertura_timestamp  TEXT,
+          apertura_usu_id     INTEGER REFERENCES usuario(usu_id),
+          apertura_usu_nombre TEXT,
+          recuento_efectivo   REAL DEFAULT 0,
+          esp_efectivo        REAL DEFAULT 0,
+          diferencia_efectivo REAL DEFAULT 0,
+          UNIQUE(cierre_fecha, apertura_usu_id)
+        )
+      `);
+      db.exec(`INSERT INTO caja_cierre_v2 SELECT * FROM caja_cierre`);
+      db.exec(`DROP TABLE caja_cierre`);
+      db.exec(`ALTER TABLE caja_cierre_v2 RENAME TO caja_cierre`);
+    })();
+    console.log('[db] caja_cierre migrada — ahora cada usuario tiene su propia sesión.');
+  }
+})();
+
+// ─── Migración: usuario — campo tiene_caja ────────────────────────────────────
+{
+  const usuCols = db.prepare("PRAGMA table_info(usuario)").all().map(c => c.name);
+  if (!usuCols.includes('usu_tiene_caja'))
+    db.exec("ALTER TABLE usuario ADD COLUMN usu_tiene_caja INTEGER NOT NULL DEFAULT 0");
+}
+
+// ─── Migración: caja_cierre — desglose por método de pago ────────────────────
+{
+  const cierreCols = db.prepare("PRAGMA table_info(caja_cierre)").all().map(c => c.name);
+  if (!cierreCols.includes('ing_efectivo'))      db.exec("ALTER TABLE caja_cierre ADD COLUMN ing_efectivo      REAL DEFAULT 0");
+  if (!cierreCols.includes('egr_efectivo'))      db.exec("ALTER TABLE caja_cierre ADD COLUMN egr_efectivo      REAL DEFAULT 0");
+  if (!cierreCols.includes('ing_tarjeta'))       db.exec("ALTER TABLE caja_cierre ADD COLUMN ing_tarjeta       REAL DEFAULT 0");
+  if (!cierreCols.includes('egr_tarjeta'))       db.exec("ALTER TABLE caja_cierre ADD COLUMN egr_tarjeta       REAL DEFAULT 0");
+  if (!cierreCols.includes('ing_transferencia')) db.exec("ALTER TABLE caja_cierre ADD COLUMN ing_transferencia REAL DEFAULT 0");
+  if (!cierreCols.includes('egr_transferencia')) db.exec("ALTER TABLE caja_cierre ADD COLUMN egr_transferencia REAL DEFAULT 0");
+  if (!cierreCols.includes('route_run_id'))      db.exec("ALTER TABLE caja_cierre ADD COLUMN route_run_id     INTEGER REFERENCES route_runs(id)");
+}
+
+// ─── Migración: caja_movimiento — campo maq_id ────────────────────────────────
+{
+  const movCols = db.prepare("PRAGMA table_info(caja_movimiento)").all().map(c => c.name);
+  if (!movCols.includes('maq_id'))
+    db.exec("ALTER TABLE caja_movimiento ADD COLUMN maq_id TEXT REFERENCES maquina(maq_id)");
+}
+
+// ─── Limpieza de tokens de reset expirados al arrancar ───────────────────────
+(() => {
+  const { count } = db.prepare(
+    "SELECT COUNT(*) as count FROM password_reset_tokens WHERE expires_at < datetime('now') OR used = 1"
+  ).get();
+  if (count > 0) {
+    db.prepare("DELETE FROM password_reset_tokens WHERE expires_at < datetime('now') OR used = 1").run();
+    console.log(`[db] Eliminados ${count} tokens de reset expirados.`);
+  }
 })();
 
 export default db;

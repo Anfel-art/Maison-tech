@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import db from '../db.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
 // GET /api/maintenance?machineId=XXX
-router.get('/', (req, res) => {
+// Admin/superadmin ven todos; terreno solo su propia máquina (machineId obligatorio)
+router.get('/', requireRole('admin', 'superadmin', 'terreno'), (req, res) => {
   const { machineId } = req.query;
+  // Terreno solo puede consultar por máquina específica, nunca el listado global
+  if (req.user.rol === 'terreno' && !machineId)
+    return res.status(400).json({ error: 'machineId es requerido para este rol' });
   let rows;
   if (machineId) {
     rows = db.prepare(`
@@ -34,8 +39,8 @@ router.get('/', (req, res) => {
   })));
 });
 
-// POST /api/maintenance
-router.post('/', (req, res) => {
+// POST /api/maintenance — solo admin, superadmin y terreno pueden registrar mantenimientos
+router.post('/', requireRole('superadmin', 'admin', 'terreno'), (req, res) => {
   const { machineId, runId, descripcion, monto, items } = req.body;
   if (!machineId || !descripcion) {
     return res.status(400).json({ error: 'machineId y descripcion son requeridos' });

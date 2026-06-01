@@ -1,10 +1,20 @@
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
-const TOKEN_KEY = 'seprisa_token';
+const TOKEN_KEY      = 'seprisa_token';
+const NOMBRE_KEY     = 'seprisa_nombre';
+const TIENE_CAJA_KEY = 'seprisa_tiene_caja';
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+export const getToken    = ()      => localStorage.getItem(TOKEN_KEY);
+export const setToken    = (token) => localStorage.setItem(TOKEN_KEY, token);
+export const clearToken  = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(NOMBRE_KEY);
+  localStorage.removeItem(TIENE_CAJA_KEY);
+};
+export const getNombre    = ()      => localStorage.getItem(NOMBRE_KEY) ?? '';
+export const setNombre    = (n)     => localStorage.setItem(NOMBRE_KEY, n);
+export const getTieneCaja = ()      => localStorage.getItem(TIENE_CAJA_KEY) === '1';
+export const setTieneCaja = (v)     => localStorage.setItem(TIENE_CAJA_KEY, v ? '1' : '0');
 
 async function request(path, options = {}) {
     const token = getToken();
@@ -43,6 +53,12 @@ export const verifyResetToken = (token) =>
   fetch(`${BASE}/auth/verify-reset-token/${token}`)
     .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Token inválido'); return d; });
 
+export const changePassword = (currentPassword, newPassword) =>
+  request('/auth/change-password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) });
+
+export const updateProfile = (nombre, email) =>
+  request('/auth/profile', { method: 'PATCH', body: JSON.stringify({ nombre, email }) });
+
 // Auth
 export const login = async (user, pass) => {
     const res = await fetch(`${BASE}/auth/login`, {
@@ -50,9 +66,17 @@ export const login = async (user, pass) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, pass }),
     });
-    if (!res.ok) throw new Error('Credenciales inválidas');
+    if (!res.ok) {
+        let msg = 'Credenciales inválidas';
+        try { const body = await res.json(); if (body?.error) msg = body.error; } catch {}
+        throw new Error(msg);
+    }
     const data = await res.json();
     setToken(data.token);
+    if (data.nombre) setNombre(data.nombre);
+    // tiene_caja no está en JWT; lo guardamos en localStorage desde la respuesta del login
+    // El servidor retorna tiene_caja solo para rol terreno
+    setTieneCaja(data.tiene_caja ?? false);
     return data;
 };
 
@@ -151,15 +175,72 @@ export const getTipomaquinas    = ()           => request('/catalogo/tipomaquina
 // Caja
 export const getCajaMovimientos = (filters = {}) => {
   const p = new URLSearchParams();
-  if (filters.from) p.set('from', filters.from);
-  if (filters.to)   p.set('to',   filters.to);
+  if (filters.from)  p.set('from',  filters.from);
+  if (filters.to)    p.set('to',    filters.to);
+  if (filters.own)   p.set('own',   '1');    // fuerza filtrar por usuario actual (CajaPage)
+  if (filters.usuId) p.set('usuId', filters.usuId); // filtro por cajero específico (Historial admin)
   return request(p.toString() ? `/caja?${p}` : '/caja');
 };
-export const getCajaBalance = () => request('/caja/balance');
-export const createCajaMovimiento = (data) => request('/caja', { method: 'POST', body: JSON.stringify(data) });
-export const deleteCajaMovimiento = (id) => request(`/caja/${id}`, { method: 'DELETE' });
-export const reembolsarMovimiento  = (id) => request(`/caja/${id}/reembolso`, { method: 'POST' });
-export const getCajaCierre         = (fecha) => request(`/caja/cierres?fecha=${fecha}`);
+export const getCajaBalance = (fecha, opts = {}) => {
+  const p = new URLSearchParams();
+  if (fecha)       p.set('fecha', fecha);
+  if (opts.own)    p.set('own',   '1');
+  if (opts.usuId)  p.set('usuId', String(opts.usuId));
+  return request(p.toString() ? `/caja/balance?${p}` : '/caja/balance');
+};
+export const getSesiones = (params = {}) => {
+  const p = new URLSearchParams();
+  if (params.from)   p.set('from',   params.from);
+  if (params.to)     p.set('to',     params.to);
+  if (params.status) p.set('status', params.status);
+  if (params.own)    p.set('own',    '1');
+  if (params.usuId)  p.set('usuId',  params.usuId);
+  return request(p.toString() ? `/caja/sesiones?${p}` : '/caja/sesiones');
+};
+// Movimientos de una sesión por su cierre_id (no por fecha)
+export const getSesionMovimientos = (sesionId) => request(`/caja/sesiones/${sesionId}/movimientos`);
+export const getPedidos = (params = {}) => {
+  const p = new URLSearchParams();
+  if (params.from)       p.set('from',       params.from);
+  if (params.to)         p.set('to',         params.to);
+  if (params.own)        p.set('own',        '1');
+  if (params.usuId)      p.set('usuId',       params.usuId);
+  if (params.tipo)       p.set('tipo',        params.tipo);
+  if (params.soloVentas) p.set('soloVentas',  '1');
+  return request(p.toString() ? `/caja/pedidos?${p}` : '/caja/pedidos');
+};
+export const exportCajaSesiones = (params = {}) => {
+  const p = new URLSearchParams();
+  if (params.from)  p.set('from',  params.from);
+  if (params.to)    p.set('to',    params.to);
+  if (params.own)   p.set('own',   '1');
+  if (params.usuId) p.set('usuId', params.usuId);
+  const token = getToken();
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  return fetch(`${BASE}/caja/export${p.toString() ? '?' + p.toString() : ''}`, { headers })
+    .then(async r => {
+      if (r.status === 401) { clearToken(); window.dispatchEvent(new Event('auth:logout')); throw new Error('No autenticado'); }
+      if (!r.ok) throw new Error(`Export error ${r.status}`);
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `sesiones_caja_${new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Asuncion' })}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+};
+/** @deprecated alias de exportCajaSesiones */
+export const getCajaExportUrl = exportCajaSesiones;
+export const createCajaMovimiento  = (data)  => request('/caja', { method: 'POST', body: JSON.stringify(data) });
+export const deleteCajaMovimiento  = (id)    => request(`/caja/${id}`, { method: 'DELETE' });
+export const reembolsarMovimiento  = (id)    => request(`/caja/${id}/reembolso`, { method: 'POST' });
+export const getCajaCierre         = (fecha, usuId) => {
+  const p = new URLSearchParams({ fecha });
+  if (usuId) p.set('usuId', String(usuId));
+  return request(`/caja/cierres?${p}`);
+};
+export const createCajaApertura    = (data)  => request('/caja/apertura', { method: 'POST', body: JSON.stringify(data) });
 export const createCajaCierre      = (data)  => request('/caja/cierre', { method: 'POST', body: JSON.stringify(data) });
 export const deleteCajaCierre      = (fecha) => request(`/caja/cierre/${fecha}`, { method: 'DELETE' });
 
@@ -169,7 +250,14 @@ export const getClientes = (params = {}) => {
   if (params.buscar) p.set('buscar', params.buscar);
   if (params.tipo)   p.set('tipo',   params.tipo);
   if (params.activo !== undefined) p.set('activo', params.activo ? '1' : '0');
+  if (params.page)   p.set('page',   params.page);
+  if (params.limit)  p.set('limit',  params.limit);
   return request(p.toString() ? `/clientes?${p}` : '/clientes');
+};
+// Retrocompatibilidad: extrae el array de datos del nuevo formato paginado
+export const getClientesData = async (params = {}) => {
+  const res = await getClientes(params);
+  return Array.isArray(res) ? res : (res.data ?? []);
 };
 export const getCliente              = (id)            => request(`/clientes/${id}`);
 export const getClienteFicha         = (id)            => request(`/clientes/${id}/ficha`);
@@ -192,6 +280,18 @@ export const getVehiculo = (usuId) => request(`/usuarios/${usuId}/vehiculo`);
 export const saveVehiculo = (usuId, data) => request(`/usuarios/${usuId}/vehiculo`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteVehiculo = (usuId) => request(`/usuarios/${usuId}/vehiculo`, { method: 'DELETE' });
 
+// Audit log (solo superadmin)
+export const getAuditLog = (params = {}) => {
+  const p = new URLSearchParams();
+  if (params.page)   p.set('page',   params.page);
+  if (params.limit)  p.set('limit',  params.limit);
+  if (params.accion) p.set('accion', params.accion);
+  if (params.usuId)  p.set('usuId',  params.usuId);
+  if (params.from)   p.set('from',   params.from);
+  if (params.to)     p.set('to',     params.to);
+  return request(p.toString() ? `/audit?${p}` : '/audit');
+};
+
 // Config
 export const getConfig = () => request('/config');
 export const updateConfig = (data) => request('/config', { method: 'PATCH', body: JSON.stringify(data) });
@@ -206,6 +306,7 @@ export const getRouteRuns    = (filters = {}) => {
   const p = new URLSearchParams();
   if (filters.status) p.set('status', filters.status);
   if (filters.usuId)  p.set('usuId',  filters.usuId);
+  if (filters.limit)  p.set('limit',  filters.limit);
   const qs = p.toString();
   return request(qs ? `/route-runs?${qs}` : '/route-runs');
 };
@@ -219,3 +320,13 @@ export const deleteStop      = (runId, stopId) => request(`/route-runs/${runId}/
 export const getMisTareas    = () => request('/route-runs/mis-tareas');
 export const getMiHistorial  = () => request('/route-runs/mi-historial');
 export const aceptarRecorrido = (id) => request(`/route-runs/${id}/aceptar`, { method: 'PATCH' });
+
+// Solicitudes de reposición (stock)
+export const createSolicitud         = (itemId, itemNombre, mensaje) =>
+  request('/solicitudes', { method: 'POST', body: JSON.stringify({ itemId, itemNombre, mensaje }) });
+export const getSolicitudes          = (noLeidas = false) =>
+  request(noLeidas ? '/solicitudes?noLeidas=1' : '/solicitudes');
+export const getSolicitudesPendientes = () => request('/solicitudes/pendientes');
+export const marcarSolicitudLeida    = (id) => request(`/solicitudes/${id}/leida`, { method: 'PATCH' });
+export const marcarTodasLeidas       = () => request('/solicitudes/leer-todas', { method: 'PATCH' });
+export const deleteSolicitud         = (id) => request(`/solicitudes/${id}`, { method: 'DELETE' });
